@@ -4,7 +4,28 @@ import { useEffect, useMemo, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { createClient } from "@/lib/supabase/client";
 
-const supabase = createClient();
+let supabaseClient: ReturnType<typeof createClient> | null = null;
+
+function getSupabaseClient() {
+  if (!supabaseClient) {
+    supabaseClient = createClient();
+  }
+
+  return supabaseClient;
+}
+
+const supabase = new Proxy(
+  {} as ReturnType<typeof createClient>,
+  {
+    get(_target, property, receiver) {
+      return Reflect.get(
+        getSupabaseClient(),
+        property,
+        receiver
+      );
+    },
+  }
+);
 
 type Business = {
   id: string;
