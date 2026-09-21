@@ -4,8 +4,6 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
-const supabase = createClient();
-
 export default function LoginPage() {
   const router = useRouter();
 
@@ -24,25 +22,32 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    const { error } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    try {
+      const supabase = createClient();
 
-    if (error) {
-      setError(error.message);
+      const { error: loginError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+      if (loginError) {
+        setError(loginError.message);
+        setLoading(false);
+        return;
+      }
+
+      router.push("/");
+    } catch (err) {
+      console.error(err);
+      setError("Login failed. Please try again.");
       setLoading(false);
-      return;
     }
-
-    router.push("/");
   }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-gray-100 p-5 text-black">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow">
-
         <h1 className="mb-2 text-2xl font-bold">
           Admin Login
         </h1>
@@ -55,9 +60,7 @@ export default function LoginPage() {
           type="email"
           placeholder="Email"
           value={email}
-          onChange={(e) =>
-            setEmail(e.target.value)
-          }
+          onChange={(e) => setEmail(e.target.value)}
           className="mb-3 w-full rounded-lg border p-3"
         />
 
@@ -65,9 +68,7 @@ export default function LoginPage() {
           type="password"
           placeholder="Password"
           value={password}
-          onChange={(e) =>
-            setPassword(e.target.value)
-          }
+          onChange={(e) => setPassword(e.target.value)}
           className="mb-3 w-full rounded-lg border p-3"
         />
 
@@ -84,7 +85,6 @@ export default function LoginPage() {
         >
           {loading ? "Logging in..." : "Login"}
         </button>
-
       </div>
     </main>
   );
