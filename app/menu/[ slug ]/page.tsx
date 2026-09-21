@@ -83,6 +83,15 @@ export default function MenuPage() {
 
   const [qrName, setQrName] =
     useState<string | null>(null);
+    const [sessionExpiry, setSessionExpiry] =
+    useState<number | null>(null);
+
+const [timeLeft, setTimeLeft] =
+    useState(3 * 60 * 60);
+
+const [sessionExpired, setSessionExpired] =
+    useState(false);
+
 
   useEffect(() => {
     async function loadMenu() {
@@ -187,6 +196,9 @@ export default function MenuPage() {
         }
 
         setQrName(qrData.name);
+        const expiry = Date.now() + 3 * 60 * 60 * 1000;
+
+setSessionExpiry(expiry);
       }
 
       /*
@@ -242,11 +254,51 @@ export default function MenuPage() {
 
     loadMenu();
   }, []);
-
-  async function placeOrder() {
-    if (!business || cart.length === 0) {
+    useEffect(() => {
+    if (sessionExpiry === null) {
       return;
     }
+
+    const timer = window.setInterval(() => {
+      const remaining = Math.max(
+        0,
+        Math.floor(
+          (sessionExpiry - Date.now()) / 1000
+        )
+      );
+
+      setTimeLeft(remaining);
+
+      if (remaining <= 0) {
+        setSessionExpired(true);
+        setCart([]);
+        setShowCart(false);
+      }
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [sessionExpiry]);
+
+  async function placeOrder() {
+  if (
+    !business ||
+    cart.length === 0 ||
+    sessionExpired
+  ) {
+    return;
+  }
+
+  if (
+    sessionExpiry === null ||
+    Date.now() >= sessionExpiry
+  ) {
+    setSessionExpired(true);
+    setCart([]);
+    setShowCart(false);
+    return;
+  }
 
     setPlacingOrder(true);
     setOrderSuccess("");
