@@ -537,10 +537,10 @@ export default function Home() {
   }
 
   function getQRUrl(qr: QRCode) {
-    if (!business) return "";
+  if (!business) return "";
 
-    return `${window.location.origin}/menu/${business.slug}?qr=${qr.token}`;
-  }
+  return `https://qr-catalogue-tptv.vercel.app/menu/${business.slug}?qr=${qr.token}`;
+}
 
   function downloadQR(qr: QRCode) {
     const canvas = document.getElementById(
