@@ -1009,7 +1009,74 @@ export default function Home() {
     INITIAL LOAD + REALTIME
     =========================
   */
+  async function addCategory() {
+    const name = window.prompt("Enter category name");
 
+    if (!name || !name.trim()) {
+      return;
+    }
+
+    const businessData = await getMyBusiness();
+
+    if (!businessData) {
+      return;
+    }
+
+    const categoryName = name.trim();
+
+    const { data, error } = await supabase
+      .from("categories")
+      .insert({
+        business_id: businessData.id,
+        name: categoryName,
+      })
+      .select("id, name")
+      .single();
+
+    if (error) {
+      console.error(error);
+      alert("Failed to add category");
+      return;
+    }
+
+    setCategories((current) =>
+      [...current, data].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      )
+    );
+  }
+
+  async function deleteCategory(categoryId: string) {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this category?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const businessData = await getMyBusiness();
+
+    if (!businessData) {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("categories")
+      .delete()
+      .eq("id", categoryId)
+      .eq("business_id", businessData.id);
+
+    if (error) {
+      console.error(error);
+      alert("Failed to delete category");
+      return;
+    }
+
+    setCategories((current) =>
+      current.filter((category) => category.id !== categoryId)
+    );
+  }
   useEffect(() => {
     let ordersChannel:
       | ReturnType<typeof supabase.channel>
@@ -1414,7 +1481,65 @@ export default function Home() {
             </div>
           )}
         </div>
+                {/* CATEGORY MANAGEMENT */}
 
+        <div className="mb-6 rounded-xl bg-white shadow">
+          <div className="flex items-center justify-between p-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
+                📂
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Category Management
+                </h2>
+
+                <p className="text-sm text-gray-500">
+                  Add or remove menu categories
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={addCategory}
+              className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
+            >
+              + Add Category
+            </button>
+          </div>
+
+          <div className="border-t px-5 py-4">
+            {categories.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No categories added yet.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {categories.map((category) => (
+                  <div
+                    key={category.id}
+                    className="flex items-center gap-2 rounded-lg bg-gray-100 px-3 py-2"
+                  >
+                    <span className="text-sm font-medium">
+                      {category.name}
+                    </span>
+
+                    <button
+                      onClick={() =>
+                        deleteCategory(category.id)
+                      }
+                      className="text-sm text-red-600 hover:text-red-800"
+                      title="Delete category"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
         {/* QR SCANNERS */}
 
         <div className="mb-6 rounded-xl bg-white shadow">
