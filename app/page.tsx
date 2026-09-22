@@ -1134,6 +1134,14 @@ export default function Home() {
               "New order received:",
               payload.new
             );
+            const audio = new Audio("/notification.mp3");
+
+audio.play().catch((error) => {
+  console.log(
+    "Notification sound could not play:",
+    error
+  );
+});
 
             setNewOrderNotification(
               `🔔 New Order #${payload.new.order_number}`
@@ -1167,7 +1175,15 @@ export default function Home() {
         });
     }
 
-    loadAdmin();
+    if (
+  typeof window !== "undefined" &&
+  "Notification" in window &&
+  Notification.permission === "default"
+) {
+  Notification.requestPermission();
+}
+
+loadAdmin();
 
     return () => {
       if (ordersChannel) {
