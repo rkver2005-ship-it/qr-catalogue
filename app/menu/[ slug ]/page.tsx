@@ -147,8 +147,27 @@ const [sessionExpired, setSessionExpired] =
             JSON.parse(savedOrders);
 
           if (Array.isArray(parsedOrders)) {
-            setCustomerOrders(parsedOrders);
-          }
+  const today = new Date().toLocaleDateString("en-CA");
+
+  const validOrders = parsedOrders.filter((order) => {
+    if (!order.created_at) {
+      return false;
+    }
+
+    return (
+      new Date(order.created_at).toLocaleDateString(
+        "en-CA"
+      ) === today
+    );
+  });
+
+  setCustomerOrders(validOrders);
+
+  localStorage.setItem(
+    orderStorageKey,
+    JSON.stringify(validOrders)
+  );
+}
         }
       } catch (storageError) {
         console.error(
