@@ -85,6 +85,8 @@ export default function MenuPage() {
     useState<string | null>(null);
     const [sessionExpiry, setSessionExpiry] =
     useState<number | null>(null);
+    const [sessionId, setSessionId] =
+  useState<string | null>(null);
 
 const [timeLeft, setTimeLeft] =
     useState(3 * 60 * 60);
@@ -189,36 +191,92 @@ const [sessionExpired, setSessionExpired] =
       const qrToken = params.get("qr");
 
       if (qrToken) {
-        const {
-          data: qrData,
-          error: qrError,
-        } = await supabase
-          .from("qr_codes")
-          .select("id, name, token, enabled")
-          .eq("token", qrToken)
-          .eq("business_id", businessData.id)
-          .eq("enabled", true)
-          .maybeSingle();
+  const {
+    data: qrData,
+    error: qrError,
+  } = await supabase
+    .from("qr_codes")
+    .select("id, name, token, enabled")
+    .eq("token", qrToken)
+    .eq("business_id", businessData.id)
+    .eq("enabled", true)
+    .maybeSingle();
 
-        if (qrError) {
-          setError(qrError.message);
-          setLoading(false);
-          return;
-        }
+  if (qrError) {
+    setError(qrError.message);
+    setLoading(false);
+    return;
+  }
 
-        if (!qrData) {
-          setError(
-            "Ye QR code valid nahi hai ya disabled hai."
-          );
-          setLoading(false);
-          return;
-        }
+  if (!qrData) {
+    setError(
+      "Ye QR code valid nahi hai ya disabled hai."
+    );
+    setLoading(false);
+    return;
+  }
 
-        setQrName(qrData.name);
-        const expiry = Date.now() + 3 * 60 * 60 * 1000;
+  setQrName(qrData.name);
 
-setSessionExpiry(expiry);
+  const sessionStorageKey =
+    `customer-session-${businessData.id}-${qrToken}`;
+
+  let currentSessionId: string | null = null;
+  let currentSessionExpiry: number | null = null;
+
+  try {
+    const savedSession = localStorage.getItem(
+      sessionStorageKey
+    );
+
+    if (savedSession) {
+      const parsedSession = JSON.parse(savedSession);
+
+      if (
+        parsedSession.session_id &&
+        parsedSession.expires_at &&
+        Number(parsedSession.expires_at) > Date.now()
+      ) {
+        currentSessionId = parsedSession.session_id;
+        currentSessionExpiry = Number(
+          parsedSession.expires_at
+        );
       }
+    }
+  } catch (storageError) {
+    console.error(
+      "Customer session load error:",
+      storageError
+    );
+  }
+
+  if (
+    !currentSessionId ||
+    !currentSessionExpiry
+  ) {
+    currentSessionId = crypto.randomUUID();
+    currentSessionExpiry =
+      Date.now() + 3 * 60 * 60 * 1000;
+
+    try {
+      localStorage.setItem(
+        sessionStorageKey,
+        JSON.stringify({
+          session_id: currentSessionId,
+          expires_at: currentSessionExpiry,
+        })
+      );
+    } catch (storageError) {
+      console.error(
+        "Customer session save error:",
+        storageError
+      );
+    }
+  }
+
+  setSessionId(currentSessionId);
+  setSessionExpiry(currentSessionExpiry);
+}
 
       /*
         =========================
@@ -302,12 +360,13 @@ setSessionExpiry(expiry);
 
   async function placeOrder() {
   if (
-    !business ||
-    cart.length === 0 ||
-    sessionExpired
-  ) {
-    return;
-  }
+  !business ||
+  cart.length === 0 ||
+  sessionExpired ||
+  !sessionId
+) {
+  return;
+}
 
   if (
     sessionExpiry === null ||
@@ -367,6 +426,7 @@ setSessionExpiry(expiry);
           p_business_id: business.id,
           p_qr_token: qrToken || null,
           p_items: orderItems,
+          p_session_id: sessionId,
         }
       );
 
