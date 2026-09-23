@@ -59,6 +59,7 @@ type Order = {
   id: string;
   order_number: number;
   qr_name: string | null;
+  session_id: string | null;
   total: number;
   created_at: string;
   cancelled: boolean;
@@ -203,12 +204,12 @@ export default function Home() {
     if (!businessData) return;
 
     const { data: orderData, error: orderError } = await supabase
-      .from("orders")
-      .select(
-        "id, order_number, qr_name, total, created_at, cancelled"
-      )
-      .eq("business_id", businessData.id)
-      .order("created_at", { ascending: false });
+  .from("orders")
+  .select(
+    "id, order_number, qr_name, session_id, total, created_at, cancelled"
+  )
+  .eq("business_id", businessData.id)
+  .order("created_at", { ascending: false });
 
     if (orderError) {
       console.error(orderError);
@@ -869,6 +870,53 @@ export default function Home() {
         .includes(searchText)
     );
   });
+  const groupedOrders = useMemo(() => {
+  const groups: Record<
+    string,
+    {
+      session_id: string;
+      orders: Order[];
+      total: number;
+      qr_name: string | null;
+      created_at: string;
+    }
+  > = {};
+
+  orders.forEach((order) => {
+    const groupKey =
+      order.session_id || `order-${order.id}`;
+
+    if (!groups[groupKey]) {
+      groups[groupKey] = {
+        session_id: groupKey,
+        orders: [],
+        total: 0,
+        qr_name: order.qr_name,
+        created_at: order.created_at,
+      };
+    }
+
+    groups[groupKey].orders.push(order);
+
+    if (!order.cancelled) {
+      groups[groupKey].total += Number(order.total);
+    }
+
+    if (
+      new Date(order.created_at) <
+      new Date(groups[groupKey].created_at)
+    ) {
+      groups[groupKey].created_at =
+        order.created_at;
+    }
+  });
+
+  return Object.values(groups).sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() -
+      new Date(a.created_at).getTime()
+  );
+}, [orders]);
 
   /*
     =========================
@@ -1725,122 +1773,159 @@ loadAdmin();
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {orders.map((order) => {
-                    const items =
-                      orderItems.filter(
-                        (item) =>
-                          item.order_id === order.id
-                      );
+                  {groupedOrders.map((group) => {
+  const groupItems = orderItems.filter((item) =>
+    group.orders.some(
+      (order) => order.id === item.order_id
+    )
+  );
 
-                    return (
-                      <div
-                        key={order.id}
-                        className={`rounded-xl border p-4 ${
-                          order.cancelled
-                            ? "border-red-200 bg-red-50"
-                            : ""
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-lg font-bold">
-                              Order #{order.order_number}
-                            </p>
+  const hasCancelledOrder = group.orders.some(
+    (order) => order.cancelled
+  );
 
-                            <p className="mt-1 text-sm text-gray-500">
-                              {new Date(
-                                order.created_at
-                              ).toLocaleString()}
-                            </p>
+  return (
+    <div
+      key={group.session_id}
+      className={`rounded-xl border p-4 ${
+        hasCancelledOrder
+          ? "border-red-200 bg-red-50"
+          : ""
+      }`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-lg font-bold">
+            Running Bill
+          </p>
 
-                            <p className="mt-1 text-sm font-semibold text-blue-600">
-                              {order.qr_name ||
-                                "Direct Order"}
-                            </p>
+          <p className="mt-1 text-sm text-gray-500">
+            {new Date(
+              group.created_at
+            ).toLocaleString()}
+          </p>
 
-                            {order.cancelled && (
-                              <p className="mt-2 inline-block rounded-lg bg-red-600 px-3 py-1 text-xs font-bold text-white">
-                                CANCELLED
-                              </p>
-                            )}
-                          </div>
+          <p className="mt-1 text-sm font-semibold text-blue-600">
+            {group.qr_name || "Direct Order"}
+          </p>
 
-                          <p className="whitespace-nowrap text-lg font-bold">
-                            {formatMoney(
-                              order.total
-                            )}
-                          </p>
-                        </div>
+          <p className="mt-1 text-xs text-gray-500">
+            {group.orders.length} order
+            {group.orders.length !== 1 ? "s" : ""}
+            {" • "}
+            Same customer session
+          </p>
+        </div>
 
-                        <div className="mt-4 space-y-2">
-                          {items.map((item) => (
-                            <div
-                              key={item.id}
-                              className="flex justify-between gap-3 rounded-lg bg-gray-50 p-3"
-                            >
-                              <div className="min-w-0">
-                                <p className="font-semibold">
-                                  {item.product_name}
-                                </p>
+        <p className="whitespace-nowrap text-lg font-bold">
+          {formatMoney(group.total)}
+        </p>
+      </div>
 
-                                <p className="text-sm text-gray-500">
-                                  {formatMoney(
-                                    item.price
-                                  )}{" "}
-                                  ×{" "}
-                                  {item.quantity}
-                                </p>
-                              </div>
+      <div className="mt-4 space-y-2">
+        {group.orders.map((order) => {
+          const items = orderItems.filter(
+            (item) =>
+              item.order_id === order.id
+          );
 
-                              <p className="font-semibold">
-                                {formatMoney(
-                                  item.item_total
-                                )}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
+          return (
+            <div
+              key={order.id}
+              className={`rounded-lg border p-3 ${
+                order.cancelled
+                  ? "border-red-200 bg-red-100"
+                  : "bg-gray-50"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold">
+                    Order #{order.order_number}
+                  </p>
 
-                        <div className="mt-4 flex justify-between border-t pt-3 text-lg font-bold">
-                          <span>Grand Total</span>
+                  <p className="text-xs text-gray-500">
+                    {new Date(
+                      order.created_at
+                    ).toLocaleString()}
+                  </p>
 
-                          <span>
-                            {formatMoney(
-                              order.total
-                            )}
-                          </span>
-                        </div>
+                  {order.cancelled && (
+                    <p className="mt-1 inline-block rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white">
+                      CANCELLED
+                    </p>
+                  )}
+                </div>
 
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                          <button
-                            onClick={() =>
-                              printBill(order)
-                            }
-                            className="rounded-lg bg-black p-3 font-semibold text-white"
-                          >
-                            🖨️ Print Bill
-                          </button>
+                <p className="font-semibold">
+                  {formatMoney(order.total)}
+                </p>
+              </div>
 
-                          {!order.cancelled ? (
-                            <button
-                              onClick={() =>
-                                cancelOrder(
-                                  order.id
-                                )
-                              }
-                              className="rounded-lg bg-red-600 p-3 font-semibold text-white"
-                            >
-                              Cancel Order
-                            </button>
-                          ) : (
-                            <div className="flex items-center justify-center rounded-lg bg-red-100 p-3 text-sm font-bold text-red-700">
-                              CANCELLED
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+              <div className="mt-3 space-y-2">
+                {items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex justify-between gap-3 rounded-lg bg-white p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold">
+                        {item.product_name}
+                      </p>
+
+                      <p className="text-sm text-gray-500">
+                        {formatMoney(item.price)} ×{" "}
+                        {item.quantity}
+                      </p>
+                    </div>
+
+                    <p className="font-semibold">
+                      {formatMoney(item.item_total)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() =>
+                    printBill(order)
+                  }
+                  className="rounded-lg bg-black p-3 text-sm font-semibold text-white"
+                >
+                  🖨️ Print Order
+                </button>
+
+                {!order.cancelled ? (
+                  <button
+                    onClick={() =>
+                      cancelOrder(order.id)
+                    }
+                    className="rounded-lg bg-red-600 p-3 text-sm font-semibold text-white"
+                  >
+                    Cancel Order
+                  </button>
+                ) : (
+                  <div className="flex items-center justify-center rounded-lg bg-red-100 p-3 text-sm font-bold text-red-700">
+                    CANCELLED
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex justify-between border-t pt-3 text-lg font-bold">
+        <span>Running Bill Total</span>
+
+        <span>
+          {formatMoney(group.total)}
+        </span>
+      </div>
+    </div>
+  );
+})}
                 </div>
               )}
             </div>
