@@ -63,6 +63,14 @@ type Order = {
   total: number;
   created_at: string;
   cancelled: boolean;
+  paid: boolean;
+};
+type OrderGroup = {
+  session_id: string;
+  orders: Order[];
+  total: number;
+  qr_name: string | null;
+  created_at: string;
 };
 
 type OrderItem = {
@@ -206,7 +214,7 @@ export default function Home() {
     const { data: orderData, error: orderError } = await supabase
   .from("orders")
   .select(
-    "id, order_number, qr_name, session_id, total, created_at, cancelled"
+    "id, order_number, qr_name, session_id, total, created_at, cancelled, paid"
   )
   .eq("business_id", businessData.id)
   .order("created_at", { ascending: false });
@@ -267,7 +275,231 @@ export default function Home() {
 
     await loadOrders();
     alert("Order cancelled successfully");
+  }async function markGroupAsPaid(group: OrderGroup) {
+  const confirmed = window.confirm(
+    "Kya aap is running bill ko PAID mark karna chahte hain?"
+  );
+
+  if (!confirmed) {
+    return;
   }
+
+  const businessData = await getMyBusiness();
+
+  if (!businessData) {
+    alert("Business not found");
+    return;
+  }
+
+  const orderIds = group.orders.map(
+    (order) => order.id
+  );
+
+  const { error } = await supabase
+    .from("orders")
+    .update({ paid: true })
+    .eq("business_id", businessData.id)
+    .in("id", orderIds)
+    .eq("cancelled", false);
+
+  if (error) {
+    console.error(error);
+    alert(error.message);
+    return;
+  }
+
+  await loadOrders();
+
+  alert("Bill paid successfully");
+}
+
+async function cancelGroup(group: OrderGroup) {
+  const confirmed = window.confirm(
+    "Kya aap is running bill ko CANCEL karna chahte hain?"
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const businessData = await getMyBusiness();
+
+  if (!businessData) {
+    alert("Business not found");
+    return;
+  }
+
+  const orderIds = group.orders.map(
+    (order) => order.id
+  );
+
+  const { error } = await supabase
+    .from("orders")
+    .update({ cancelled: true })
+    .eq("business_id", businessData.id)
+    .in("id", orderIds)
+    .eq("paid", false);
+
+  if (error) {
+    console.error(error);
+    alert(error.message);
+    return;
+  }
+
+  await loadOrders();
+
+  alert("Bill cancelled successfully");
+}
+function printGroupBill(group: OrderGroup) {
+  const groupItems = orderItems.filter((item) =>
+    group.orders.some(
+      (order) => order.id === item.order_id
+    )
+  );
+
+  const billWindow = window.open(
+    "",
+    "_blank",
+    "width=800,height=900"
+  );
+
+  if (!billWindow) {
+    alert("Please allow popups to print the bill.");
+    return;
+  }
+
+  const billTotal = group.orders.reduce(
+    (sum, order) => sum + Number(order.total),
+    0
+  );
+
+  billWindow.document.write(`
+    <html>
+      <head>
+        <title>Running Bill</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            padding: 30px;
+            color: #111;
+          }
+
+          h1 {
+            margin-bottom: 5px;
+          }
+
+          .muted {
+            color: #666;
+            font-size: 14px;
+          }
+
+          .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 25px;
+          }
+
+          .table th,
+          .table td {
+            border-bottom: 1px solid #ddd;
+            padding: 10px 5px;
+            text-align: left;
+          }
+
+          .right {
+            text-align: right;
+          }
+
+          .total {
+            margin-top: 25px;
+            border-top: 2px solid #111;
+            padding-top: 15px;
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+          }
+
+          .order-heading {
+            margin-top: 20px;
+            font-weight: bold;
+          }
+        </style>
+      </head>
+
+      <body>
+        <h1>Running Bill</h1>
+
+        <p class="muted">
+          ${group.qr_name || "Direct Order"}
+        </p>
+
+        <p class="muted">
+          ${new Date(group.created_at).toLocaleString()}
+        </p>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Qty</th>
+              <th class="right">Price</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            ${group.orders
+              .map(
+                (order) => `
+                  <tr>
+                    <td colspan="4" class="order-heading">
+                      Order #${order.order_number}
+                    </td>
+                  </tr>
+
+                  ${groupItems
+                    .filter(
+                      (item) =>
+                        item.order_id === order.id
+                    )
+                    .map(
+                      (item) => `
+                        <tr>
+                          <td>${item.product_name}</td>
+                          <td>${item.quantity}</td>
+                          <td class="right">
+                            ${formatMoney(item.price)}
+                          </td>
+                          <td class="right">
+                            ${formatMoney(item.item_total)}
+                          </td>
+                        </tr>
+                      `
+                    )
+                    .join("")}
+                `
+              )
+              .join("")}
+          </tbody>
+        </table>
+
+        <div class="total">
+          <span>Bill Total</span>
+          <span>${formatMoney(billTotal)}</span>
+        </div>
+      </body>
+    </html>
+  `);
+
+  billWindow.document.close();
+
+  billWindow.focus();
+
+  setTimeout(() => {
+    billWindow.print();
+  }, 300);
+}
 
   function printBill(order: Order) {
     const items = orderItems.filter(
@@ -505,6 +737,450 @@ export default function Home() {
       }, 500);
     }, 300);
   }
+  function printLast30DaysReport() {
+  if (orders.length === 0) {
+    alert("Last 30 days ka koi order data nahi hai.");
+    return;
+  }
+
+  const reportWindow = window.open(
+    "",
+    "_blank",
+    "width=900,height=900"
+  );
+
+  if (!reportWindow) {
+    alert("Please allow popups to print the report.");
+    return;
+  }
+
+  const reportOrders = [...orders].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() -
+      new Date(b.created_at).getTime()
+  );
+
+  const totalSales = reportOrders
+    .filter((order) => !order.cancelled)
+    .reduce(
+      (sum, order) => sum + Number(order.total),
+      0
+    );
+
+  const cancelledAmount = reportOrders
+    .filter((order) => order.cancelled)
+    .reduce(
+      (sum, order) => sum + Number(order.total),
+      0
+    );
+
+  const totalItems = orderItems
+    .filter((item) =>
+      reportOrders.some(
+        (order) => order.id === item.order_id
+      )
+    )
+    .reduce(
+      (sum, item) => sum + Number(item.quantity),
+      0
+    );
+
+  const ordersHtml = reportOrders
+    .map((order) => {
+      const items = orderItems.filter(
+        (item) => item.order_id === order.id
+      );
+
+      const status = order.cancelled
+        ? "CANCELLED"
+        : order.paid
+        ? "PAID"
+        : "RUNNING";
+
+      return `
+        <div class="order">
+          <div class="order-header">
+            <div>
+              <strong>Order #${order.order_number}</strong>
+              <div class="muted">
+                ${escapeHtml(
+                  new Date(
+                    order.created_at
+                  ).toLocaleString()
+                )}
+              </div>
+              <div class="muted">
+                Table: ${escapeHtml(
+                  order.qr_name || "Direct Order"
+                )}
+              </div>
+            </div>
+
+            <div class="status">
+              ${status}
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              ${items
+                .map(
+                  (item) => `
+                    <tr>
+                      <td>
+                        ${escapeHtml(
+                          item.product_name
+                        )}
+                      </td>
+                      <td>
+                        ${item.quantity}
+                      </td>
+                      <td>
+                        ${formatMoney(item.price)}
+                      </td>
+                      <td>
+                        ${formatMoney(
+                          item.item_total
+                        )}
+                      </td>
+                    </tr>
+                  `
+                )
+                .join("")}
+            </tbody>
+          </table>
+
+          <div class="order-total">
+            Order Total:
+            ${formatMoney(order.total)}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  reportWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Last 30 Days Report</title>
+
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1.0"
+        />
+
+        <style>
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            padding: 30px;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #111;
+            background: #fff;
+          }
+
+          h1 {
+            margin: 0 0 5px;
+          }
+
+          h2 {
+            margin-top: 30px;
+          }
+
+          .muted {
+            color: #666;
+            font-size: 13px;
+            margin-top: 4px;
+          }
+
+          .summary {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 25px;
+          }
+
+          .summary-box {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 15px;
+          }
+
+          .summary-label {
+            color: #666;
+            font-size: 13px;
+          }
+
+          .summary-value {
+            margin-top: 5px;
+            font-size: 20px;
+            font-weight: bold;
+          }
+
+          .order {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 15px;
+            page-break-inside: avoid;
+          }
+
+          .order-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 15px;
+          }
+
+          .status {
+            font-weight: bold;
+          }
+
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+
+          th,
+          td {
+            border-bottom: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+          }
+
+          th {
+            background: #f5f5f5;
+          }
+
+          .order-total {
+            margin-top: 12px;
+            text-align: right;
+            font-weight: bold;
+          }
+
+          @media print {
+            @page {
+              size: auto;
+              margin: 10mm;
+            }
+
+            body {
+              padding: 0;
+            }
+          }
+
+          @media (max-width: 700px) {
+            body {
+              padding: 15px;
+            }
+
+            .summary {
+              grid-template-columns: 1fr;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <h1>
+          ${escapeHtml(
+            business?.name || "Business"
+          )}
+        </h1>
+
+        <p class="muted">
+          Last 30 Days Sales Report
+        </p>
+
+        <div class="summary">
+          <div class="summary-box">
+            <div class="summary-label">
+              Total Orders
+            </div>
+
+            <div class="summary-value">
+              ${reportOrders.length}
+            </div>
+          </div>
+
+          <div class="summary-box">
+            <div class="summary-label">
+              Total Sales
+            </div>
+
+            <div class="summary-value">
+              ${formatMoney(totalSales)}
+            </div>
+          </div>
+
+          <div class="summary-box">
+            <div class="summary-label">
+              Items Sold
+            </div>
+
+            <div class="summary-value">
+              ${totalItems}
+            </div>
+          </div>
+
+          <div class="summary-box">
+            <div class="summary-label">
+              Cancelled Orders
+            </div>
+
+            <div class="summary-value">
+              ${
+                reportOrders.filter(
+                  (order) => order.cancelled
+                ).length
+              }
+            </div>
+          </div>
+
+          <div class="summary-box">
+            <div class="summary-label">
+              Cancelled Amount
+            </div>
+
+            <div class="summary-value">
+              ${formatMoney(cancelledAmount)}
+            </div>
+          </div>
+        </div>
+
+        <h2>Order Details</h2>
+
+        ${ordersHtml}
+      </body>
+    </html>
+  `);
+
+  reportWindow.document.close();
+  reportWindow.focus();
+
+  setTimeout(() => {
+    reportWindow.print();
+  }, 300);
+}
+
+function downloadLast30DaysCSV() {
+  if (orders.length === 0) {
+    alert("Last 30 days ka koi order data nahi hai.");
+    return;
+  }
+
+  const rows = [
+    [
+      "Order Number",
+      "Date",
+      "Table",
+      "Status",
+      "Item",
+      "Quantity",
+      "Price",
+      "Item Total",
+      "Order Total",
+    ],
+  ];
+
+  const reportOrders = [...orders].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() -
+      new Date(b.created_at).getTime()
+  );
+
+  reportOrders.forEach((order) => {
+    const items = orderItems.filter(
+      (item) => item.order_id === order.id
+    );
+
+    const status = order.cancelled
+      ? "CANCELLED"
+      : order.paid
+      ? "PAID"
+      : "RUNNING";
+
+    if (items.length === 0) {
+      rows.push([
+        String(order.order_number),
+        new Date(
+          order.created_at
+        ).toLocaleString(),
+        order.qr_name || "Direct Order",
+        status,
+        "",
+        "",
+        "",
+        "",
+        String(order.total),
+      ]);
+
+      return;
+    }
+
+    items.forEach((item) => {
+      rows.push([
+        String(order.order_number),
+        new Date(
+          order.created_at
+        ).toLocaleString(),
+        order.qr_name || "Direct Order",
+        status,
+        item.product_name,
+        String(item.quantity),
+        String(item.price),
+        String(item.item_total),
+        String(order.total),
+      ]);
+    });
+  });
+
+  const csv = rows
+    .map((row) =>
+      row
+        .map((value) => {
+          const text = String(value ?? "");
+          return `"${text.replace(/"/g, '""')}"`;
+        })
+        .join(",")
+    )
+    .join("\n");
+
+  const blob = new Blob(
+    [csv],
+    {
+      type: "text/csv;charset=utf-8;",
+    }
+  );
+
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `${
+    business?.slug || "business"
+  }-last-30-days.csv`;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+}
 
   function escapeHtml(value: string) {
     return value
@@ -882,34 +1558,132 @@ export default function Home() {
     }
   > = {};
 
-  orders.forEach((order) => {
-    const groupKey =
-      order.session_id || `order-${order.id}`;
+  orders
+    .filter(
+      (order) =>
+        !order.paid &&
+        !order.cancelled
+    )
+    .forEach((order) => {
+      const groupKey =
+        order.session_id ||
+        `order-${order.id}`;
 
-    if (!groups[groupKey]) {
-      groups[groupKey] = {
-        session_id: groupKey,
-        orders: [],
-        total: 0,
-        qr_name: order.qr_name,
-        created_at: order.created_at,
-      };
-    }
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          session_id: groupKey,
+          orders: [],
+          total: 0,
+          qr_name: order.qr_name,
+          created_at: order.created_at,
+        };
+      }
 
-    groups[groupKey].orders.push(order);
+      groups[groupKey].orders.push(order);
 
-    if (!order.cancelled) {
-      groups[groupKey].total += Number(order.total);
-    }
+      groups[groupKey].total += Number(
+        order.total
+      );
 
-    if (
-      new Date(order.created_at) <
-      new Date(groups[groupKey].created_at)
-    ) {
-      groups[groupKey].created_at =
-        order.created_at;
-    }
-  });
+      if (
+        new Date(order.created_at) <
+        new Date(
+          groups[groupKey].created_at
+        )
+      ) {
+        groups[groupKey].created_at =
+          order.created_at;
+      }
+    });
+
+  return Object.values(groups).sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() -
+      new Date(a.created_at).getTime()
+  );
+}, [orders]);
+const paidGroups = useMemo(() => {
+  const groups: Record<string, OrderGroup> = {};
+
+  orders
+    .filter(
+      (order) =>
+        order.paid &&
+        !order.cancelled
+    )
+    .forEach((order) => {
+      const groupKey =
+        order.session_id ||
+        `order-${order.id}`;
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          session_id: groupKey,
+          orders: [],
+          total: 0,
+          qr_name: order.qr_name,
+          created_at: order.created_at,
+        };
+      }
+
+      groups[groupKey].orders.push(order);
+      groups[groupKey].total += Number(
+        order.total
+      );
+
+      if (
+        new Date(order.created_at) <
+        new Date(
+          groups[groupKey].created_at
+        )
+      ) {
+        groups[groupKey].created_at =
+          order.created_at;
+      }
+    });
+
+  return Object.values(groups).sort(
+    (a, b) =>
+      new Date(b.created_at).getTime() -
+      new Date(a.created_at).getTime()
+  );
+}, [orders]);
+
+const cancelledGroups = useMemo(() => {
+  const groups: Record<string, OrderGroup> = {};
+
+  orders
+    .filter((order) => order.cancelled)
+    .forEach((order) => {
+      const groupKey =
+        order.session_id ||
+        `order-${order.id}`;
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          session_id: groupKey,
+          orders: [],
+          total: 0,
+          qr_name: order.qr_name,
+          created_at: order.created_at,
+        };
+      }
+
+      groups[groupKey].orders.push(order);
+      groups[groupKey].total += Number(
+        order.total
+      );
+
+      if (
+        new Date(order.created_at) <
+        new Date(
+          groups[groupKey].created_at
+        )
+      ) {
+        groups[groupKey].created_at =
+          order.created_at;
+      }
+    });
 
   return Object.values(groups).sort(
     (a, b) =>
@@ -1314,7 +2088,21 @@ loadAdmin();
                     setSelectedDate(e.target.value)
                   }
                   className="w-full rounded-lg border p-3"
-                />
+                /><div className="mt-3 grid grid-cols-2 gap-2">
+  <button
+    onClick={printLast30DaysReport}
+    className="rounded-lg bg-black p-3 text-sm font-semibold text-white"
+  >
+    🖨️ Print Last 30 Days
+  </button>
+
+  <button
+    onClick={downloadLast30DaysCSV}
+    className="rounded-lg bg-blue-600 p-3 text-sm font-semibold text-white"
+  >
+    ⬇️ Download CSV
+  </button>
+</div>
               </div>
 
               {/* KPI GRID */}
@@ -1886,31 +2674,34 @@ loadAdmin();
                 ))}
               </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  onClick={() =>
-                    printBill(order)
-                  }
-                  className="rounded-lg bg-black p-3 text-sm font-semibold text-white"
-                >
-                  🖨️ Print Order
-                </button>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+  <button
+    onClick={() =>
+      printGroupBill(group)
+    }
+    className="rounded-lg bg-black p-3 text-sm font-semibold text-white"
+  >
+    🖨️ Print Bill
+  </button>
 
-                {!order.cancelled ? (
-                  <button
-                    onClick={() =>
-                      cancelOrder(order.id)
-                    }
-                    className="rounded-lg bg-red-600 p-3 text-sm font-semibold text-white"
-                  >
-                    Cancel Order
-                  </button>
-                ) : (
-                  <div className="flex items-center justify-center rounded-lg bg-red-100 p-3 text-sm font-bold text-red-700">
-                    CANCELLED
-                  </div>
-                )}
-              </div>
+  <button
+    onClick={() =>
+      markGroupAsPaid(group)
+    }
+    className="rounded-lg bg-green-600 p-3 text-sm font-semibold text-white"
+  >
+    💰 Paid
+  </button>
+
+  <button
+    onClick={() =>
+      cancelGroup(group)
+    }
+    className="rounded-lg bg-red-600 p-3 text-sm font-semibold text-white"
+  >
+    ❌ Cancel Bill
+  </button>
+</div>
             </div>
           );
         })}
@@ -1931,6 +2722,217 @@ loadAdmin();
             </div>
           )}
         </div>
+        <div className="mt-8">
+  <p className="mb-4 text-xl font-bold">
+    💰 Paid History
+  </p>
+
+  {paidGroups.length === 0 ? (
+    <div className="rounded-lg bg-gray-50 p-5 text-center text-sm text-gray-500">
+      No paid bills yet.
+    </div>
+  ) : (
+    <div className="space-y-4">
+      {paidGroups.map((group) => {
+        const groupItems = orderItems.filter((item) =>
+          group.orders.some(
+            (order) => order.id === item.order_id
+          )
+        );
+
+        return (
+          <div
+            key={group.session_id}
+            className="rounded-xl border border-green-200 bg-green-50 p-4"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-lg font-bold">
+                  PAID BILL
+                </p>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  {new Date(
+                    group.created_at
+                  ).toLocaleString()}
+                </p>
+
+                <p className="mt-1 text-sm font-semibold text-blue-600">
+                  {group.qr_name || "Direct Order"}
+                </p>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  {group.orders.length} order
+                  {group.orders.length !== 1 ? "s" : ""}
+                  {" • "}
+                  Same customer session
+                </p>
+              </div>
+
+              <p className="whitespace-nowrap text-lg font-bold">
+                {formatMoney(group.total)}
+              </p>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {group.orders.map((order) => {
+                const items = groupItems.filter(
+                  (item) =>
+                    item.order_id === order.id
+                );
+
+                return (
+                  <div
+                    key={order.id}
+                    className="rounded-lg bg-white p-3"
+                  >
+                    <p className="font-semibold">
+                      Order #{order.order_number}
+                    </p>
+
+                    <div className="mt-2 space-y-1">
+                      {items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex justify-between gap-3 text-sm"
+                        >
+                          <span>
+                            {item.product_name} ×{" "}
+                            {item.quantity}
+                          </span>
+
+                          <span className="font-semibold">
+                            {formatMoney(
+                              item.item_total
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex justify-between border-t pt-3 text-lg font-bold">
+              <span>Paid Total</span>
+
+              <span>
+                {formatMoney(group.total)}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  )}
+</div>
+
+<div className="mt-8">
+  <p className="mb-4 text-xl font-bold">
+    ❌ Cancelled History
+  </p>
+
+  {cancelledGroups.length === 0 ? (
+    <div className="rounded-lg bg-gray-50 p-5 text-center text-sm text-gray-500">
+      No cancelled bills yet.
+    </div>
+  ) : (
+    <div className="space-y-4">
+      {cancelledGroups.map((group) => {
+        const groupItems = orderItems.filter((item) =>
+          group.orders.some(
+            (order) => order.id === item.order_id
+          )
+        );
+
+        return (
+          <div
+            key={group.session_id}
+            className="rounded-xl border border-red-200 bg-red-50 p-4"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-lg font-bold">
+                  CANCELLED BILL
+                </p>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  {new Date(
+                    group.created_at
+                  ).toLocaleString()}
+                </p>
+
+                <p className="mt-1 text-sm font-semibold text-blue-600">
+                  {group.qr_name || "Direct Order"}
+                </p>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  {group.orders.length} order
+                  {group.orders.length !== 1 ? "s" : ""}
+                  {" • "}
+                  Same customer session
+                </p>
+              </div>
+
+              <p className="whitespace-nowrap text-lg font-bold">
+                {formatMoney(group.total)}
+              </p>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {group.orders.map((order) => {
+                const items = groupItems.filter(
+                  (item) =>
+                    item.order_id === order.id
+                );
+
+                return (
+                  <div
+                    key={order.id}
+                    className="rounded-lg bg-white p-3"
+                  >
+                    <p className="font-semibold">
+                      Order #{order.order_number}
+                    </p>
+
+                    <div className="mt-2 space-y-1">
+                      {items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex justify-between gap-3 text-sm"
+                        >
+                          <span>
+                            {item.product_name} ×{" "}
+                            {item.quantity}
+                          </span>
+
+                          <span className="font-semibold">
+                            {formatMoney(
+                              item.item_total
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex justify-between border-t pt-3 text-lg font-bold">
+              <span>Cancelled Total</span>
+
+              <span>
+                {formatMoney(group.total)}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  )}
+</div>
 
         {/* ADD / EDIT PRODUCT */}
 
