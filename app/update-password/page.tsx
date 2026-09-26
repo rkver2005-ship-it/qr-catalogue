@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function UpdatePasswordPage() {
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] =
@@ -18,21 +19,52 @@ export default function UpdatePasswordPage() {
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    async function checkRecoverySession() {
-      const { data } =
-        await supabase.auth.getSession();
+    let mounted = true;
 
-      if (!data.session) {
+    async function setupRecoverySession() {
+      const code = searchParams.get("code");
+
+      if (code) {
+        const { error: exchangeError } =
+          await supabase.auth.exchangeCodeForSession(
+            code
+          );
+
+        if (exchangeError) {
+          console.error(exchangeError);
+
+          if (mounted) {
+            setError(
+              "Password reset link invalid ya expire ho gaya hai. Please naya reset link request karo."
+            );
+            setCheckingSession(false);
+          }
+
+          return;
+        }
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!mounted) return;
+
+      if (!session) {
         setError(
-          "Password reset link invalid ya expire ho gaya hai. Please naya reset link request karo."
+          "Password reset session nahi mila. Please naya reset link request karo."
         );
       }
 
       setCheckingSession(false);
     }
 
-    checkRecoverySession();
-  }, [supabase]);
+    setupRecoverySession();
+
+    return () => {
+      mounted = false;
+    };
+  }, [searchParams, supabase]);
 
   async function handleUpdatePassword() {
     setError("");
@@ -57,10 +89,11 @@ export default function UpdatePasswordPage() {
 
     setLoading(true);
 
-    const { data } =
-      await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-    if (!data.session) {
+    if (!session) {
       setError(
         "Password reset session nahi mila. Please naya reset link request karo."
       );
@@ -94,7 +127,7 @@ export default function UpdatePasswordPage() {
       <main className="flex min-h-screen items-center justify-center bg-gray-100 p-5 text-black">
         <div className="w-full max-w-md rounded-xl bg-white p-6 text-center shadow">
           <p className="text-gray-600">
-            Checking password reset link...
+            Verifying password reset link...
           </p>
         </div>
       </main>
