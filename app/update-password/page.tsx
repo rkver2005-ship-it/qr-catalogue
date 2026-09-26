@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function UpdatePasswordPage() {
   const supabase = createClient();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] =
@@ -22,7 +21,9 @@ export default function UpdatePasswordPage() {
     let mounted = true;
 
     async function setupRecoverySession() {
-      const code = searchParams.get("code");
+      const code = new URLSearchParams(
+        window.location.search
+      ).get("code");
 
       if (code) {
         const { error: exchangeError } =
@@ -64,7 +65,7 @@ export default function UpdatePasswordPage() {
     return () => {
       mounted = false;
     };
-  }, [searchParams, supabase]);
+  }, [supabase]);
 
   async function handleUpdatePassword() {
     setError("");
