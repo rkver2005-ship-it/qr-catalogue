@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createRecoveryClient } from "@/lib/supabase/recovery-client";
 
 export default function UpdatePasswordPage() {
-  const supabase = createClient();
+ const supabase = createRecoveryClient();
   const router = useRouter();
 
   const [password, setPassword] = useState("");
