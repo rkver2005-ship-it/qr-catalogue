@@ -65,7 +65,7 @@ export default function LoginPage() {
       const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(email, {
           redirectTo:
-            "https://qr-catalogue-tptv.vercel.app/update-password",
+            "https://qr-catalogue-tptv.vercel.app/auth/callback?next=/update-password",
         });
 
       if (resetError) {
