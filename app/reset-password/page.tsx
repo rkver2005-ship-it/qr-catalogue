@@ -1,30 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createRecoveryClient } from "@/lib/supabase/recovery-client";
 
 export default function ResetPasswordPage() {
-  const [confirmationUrl, setConfirmationUrl] = useState("");
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const url = params.get("confirmation_url");
+  async function handleContinue() {
+    setError("");
+    setLoading(true);
 
-    if (!url) {
-      setError("Password reset link invalid hai.");
-      return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+
+      const tokenHash = params.get("token_hash");
+      const type = params.get("type");
+
+      if (!tokenHash || type !== "recovery") {
+        setError(
+          "Password reset link invalid ya expire ho gaya hai. Please naya reset link request karo."
+        );
+        setLoading(false);
+        return;
+      }
+
+      const supabase = createRecoveryClient();
+
+      const { error: verifyError } =
+        await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: "recovery",
+        });
+
+      if (verifyError) {
+        console.error(verifyError);
+        setError(
+          "Password reset link invalid ya expire ho gaya hai. Please naya reset link request karo."
+        );
+        setLoading(false);
+        return;
+      }
+
+      router.push("/update-password");
+    } catch (err) {
+      console.error(err);
+      setError(
+        "Password reset link verify nahi ho saka. Please naya reset link request karo."
+      );
+      setLoading(false);
     }
-
-    setConfirmationUrl(url);
-  }, []);
-
-  function handleContinue() {
-    if (!confirmationUrl) {
-      setError("Password reset link invalid hai.");
-      return;
-    }
-
-    window.location.href = confirmationUrl;
   }
 
   return (
@@ -82,20 +109,22 @@ export default function ResetPasswordPage() {
         <button
           type="button"
           onClick={handleContinue}
-          disabled={!confirmationUrl}
+          disabled={loading}
           style={{
             width: "100%",
             padding: "14px",
             border: "none",
             borderRadius: "10px",
-            background: confirmationUrl ? "#111827" : "#9ca3af",
+            background: loading ? "#9ca3af" : "#111827",
             color: "#ffffff",
             fontSize: "16px",
             fontWeight: 600,
-            cursor: confirmationUrl ? "pointer" : "not-allowed",
+            cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          Continue to Reset Password
+          {loading
+            ? "Verifying..."
+            : "Continue to Reset Password"}
         </button>
       </div>
     </main>
