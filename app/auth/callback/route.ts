@@ -1,21 +1,21 @@
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
-  const url = request.nextUrl.clone();
-
+export async function GET(request: Request) {
+  const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const next =
-    url.searchParams.get("next") || "/update-password";
 
   if (!code) {
-    url.pathname = "/login";
-    url.search = "";
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(
+      new URL("/login", url.origin)
+    );
   }
 
-  let response = NextResponse.redirect(
-    new URL(next, request.url)
+  const cookieStore = await cookies();
+
+  const response = NextResponse.redirect(
+    new URL("/update-password", url.origin)
   );
 
   const supabase = createServerClient(
@@ -24,22 +24,18 @@ export async function GET(request: NextRequest) {
     {
       cookies: {
         getAll() {
-          return request.cookies.getAll();
+          return cookieStore.getAll();
         },
 
         setAll(cookiesToSet) {
           cookiesToSet.forEach(
-            ({ name, value }) => {
-              request.cookies.set(name, value);
-            }
-          );
-
-          response = NextResponse.redirect(
-            new URL(next, request.url)
-          );
-
-          cookiesToSet.forEach(
             ({ name, value, options }) => {
+              cookieStore.set(
+                name,
+                value,
+                options
+              );
+
               response.cookies.set(
                 name,
                 value,
@@ -57,13 +53,13 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error(
-      "Password recovery callback error:",
+      "Password recovery exchange error:",
       error
     );
 
     const errorUrl = new URL(
       "/login",
-      request.url
+      url.origin
     );
 
     errorUrl.searchParams.set(
