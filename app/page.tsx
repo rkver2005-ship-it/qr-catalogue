@@ -90,9 +90,15 @@ export default function Home() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
 
-  const [showQRCodes, setShowQRCodes] = useState(false);
-  const [showOrders, setShowOrders] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(true);
+ const [showQRCodes, setShowQRCodes] = useState(false);
+const [showOrders, setShowOrders] = useState(false);
+const [showAnalytics, setShowAnalytics] = useState(true);
+
+const [showPaidHistory, setShowPaidHistory] =
+  useState(false);
+
+const [showCancelledHistory, setShowCancelledHistory] =
+  useState(false);
 
   const [newOrderNotification, setNewOrderNotification] =
     useState("");
@@ -1609,7 +1615,8 @@ const paidGroups = useMemo(() => {
     .filter(
       (order) =>
         order.paid &&
-        !order.cancelled
+        !order.cancelled &&
+        getLocalDate(order.created_at) === selectedDate
     )
     .forEach((order) => {
       const groupKey =
@@ -1627,6 +1634,7 @@ const paidGroups = useMemo(() => {
       }
 
       groups[groupKey].orders.push(order);
+
       groups[groupKey].total += Number(
         order.total
       );
@@ -1647,13 +1655,17 @@ const paidGroups = useMemo(() => {
       new Date(b.created_at).getTime() -
       new Date(a.created_at).getTime()
   );
-}, [orders]);
+}, [orders, selectedDate]);
 
 const cancelledGroups = useMemo(() => {
   const groups: Record<string, OrderGroup> = {};
 
   orders
-    .filter((order) => order.cancelled)
+    .filter(
+      (order) =>
+        order.cancelled &&
+        getLocalDate(order.created_at) === selectedDate
+    )
     .forEach((order) => {
       const groupKey =
         order.session_id ||
@@ -1670,6 +1682,7 @@ const cancelledGroups = useMemo(() => {
       }
 
       groups[groupKey].orders.push(order);
+
       groups[groupKey].total += Number(
         order.total
       );
@@ -1690,7 +1703,7 @@ const cancelledGroups = useMemo(() => {
       new Date(b.created_at).getTime() -
       new Date(a.created_at).getTime()
   );
-}, [orders]);
+}, [orders, selectedDate]);
 
   /*
     =========================
@@ -2723,11 +2736,23 @@ loadAdmin();
           )}
         </div>
         <div className="mt-8">
-  <p className="mb-4 text-xl font-bold">
+  <button
+  onClick={() =>
+    setShowPaidHistory(!showPaidHistory)
+  }
+  className="mb-4 flex w-full items-center justify-between text-left"
+>
+  <span className="text-xl font-bold">
     💰 Paid History
-  </p>
+  </span>
 
-  {paidGroups.length === 0 ? (
+  <span className="text-xl">
+    {showPaidHistory ? "▲" : "▼"}
+  </span>
+</button>
+ {showPaidHistory && (
+  <>
+    {paidGroups.length === 0 ? (
     <div className="rounded-lg bg-gray-50 p-5 text-center text-sm text-gray-500">
       No paid bills yet.
     </div>
@@ -2825,14 +2850,29 @@ loadAdmin();
         );
       })}
     </div>
-  )}
+      )}
+  </>
+)}
 </div>
 
-<div className="mt-8">
-  <p className="mb-4 text-xl font-bold">
-    ❌ Cancelled History
-  </p>
 
+<div className="mt-8">
+  <button
+  onClick={() =>
+    setShowCancelledHistory(!showCancelledHistory)
+  }
+  className="mb-4 flex w-full items-center justify-between text-left"
+>
+  <span className="text-xl font-bold">
+    ❌ Cancelled History
+  </span>
+
+  <span className="text-xl">
+    {showCancelledHistory ? "▲" : "▼"}
+  </span>
+</button>
+{showCancelledHistory && (
+ <>
   {cancelledGroups.length === 0 ? (
     <div className="rounded-lg bg-gray-50 p-5 text-center text-sm text-gray-500">
       No cancelled bills yet.
@@ -2930,8 +2970,10 @@ loadAdmin();
           </div>
         );
       })}
-    </div>
+        </div>
   )}
+  </>
+)}
 </div>
 
         {/* ADD / EDIT PRODUCT */}
