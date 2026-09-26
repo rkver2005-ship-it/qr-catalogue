@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRecoveryClient } from "@/lib/supabase/recovery-client";
 
+const supabase = createRecoveryClient();
+
 export default function UpdatePasswordPage() {
- const supabase = createRecoveryClient();
   const router = useRouter();
 
   const [password, setPassword] = useState("");
@@ -14,58 +15,85 @@ export default function UpdatePasswordPage() {
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] =
     useState(true);
+  const [hasSession, setHasSession] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
     let mounted = true;
+    let timeoutId: ReturnType<typeof setTimeout>;
 
-    async function setupRecoverySession() {
-      const code = new URLSearchParams(
-        window.location.search
-      ).get("code");
+    async function checkRecoverySession() {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-      if (code) {
-        const { error: exchangeError } =
-          await supabase.auth.exchangeCodeForSession(
-            code
-          );
+        if (!mounted) return;
 
-        if (exchangeError) {
-          console.error(exchangeError);
+        if (session) {
+          setHasSession(true);
+          setCheckingSession(false);
+          return;
+        }
 
-          if (mounted) {
+        timeoutId = setTimeout(async () => {
+          const {
+            data: { session: latestSession },
+          } = await supabase.auth.getSession();
+
+          if (!mounted) return;
+
+          if (latestSession) {
+            setHasSession(true);
+          } else {
             setError(
               "Password reset link invalid ya expire ho gaya hai. Please naya reset link request karo."
             );
-            setCheckingSession(false);
           }
 
-          return;
-        }
-      }
+          setCheckingSession(false);
+        }, 1500);
+      } catch (err) {
+        console.error(err);
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+        if (!mounted) return;
 
-      if (!mounted) return;
-
-      if (!session) {
         setError(
-          "Password reset session nahi mila. Please naya reset link request karo."
+          "Password reset link verify nahi ho saka. Please naya reset link request karo."
         );
+        setCheckingSession(false);
       }
-
-      setCheckingSession(false);
     }
 
-    setupRecoverySession();
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (!mounted) return;
+
+        if (
+          event === "PASSWORD_RECOVERY" ||
+          event === "SIGNED_IN" ||
+          event === "INITIAL_SESSION"
+        ) {
+          if (session) {
+            setHasSession(true);
+            setError("");
+            setCheckingSession(false);
+          }
+        }
+      }
+    );
+
+    checkRecoverySession();
 
     return () => {
       mounted = false;
+      clearTimeout(timeoutId);
+      subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, []);
 
   async function handleUpdatePassword() {
     setError("");
@@ -90,37 +118,45 @@ export default function UpdatePasswordPage() {
 
     setLoading(true);
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    if (!session) {
+      if (!session) {
+        setError(
+          "Password reset session nahi mila. Please naya reset link request karo."
+        );
+        setLoading(false);
+        return;
+      }
+
+      const { error: updateError } =
+        await supabase.auth.updateUser({
+          password,
+        });
+
+      if (updateError) {
+        console.error(updateError);
+        setError(updateError.message);
+        setLoading(false);
+        return;
+      }
+
+      setSuccess(
+        "Password updated successfully."
+      );
+
+      setTimeout(() => {
+        router.push("/login");
+      }, 1500);
+    } catch (err) {
+      console.error(err);
       setError(
-        "Password reset session nahi mila. Please naya reset link request karo."
+        "Password update failed. Please try again."
       );
       setLoading(false);
-      return;
     }
-
-    const { error: updateError } =
-      await supabase.auth.updateUser({
-        password,
-      });
-
-    if (updateError) {
-      console.error(updateError);
-      setError(updateError.message);
-      setLoading(false);
-      return;
-    }
-
-    setSuccess(
-      "Password updated successfully."
-    );
-
-    setTimeout(() => {
-      router.push("/login");
-    }, 1500);
   }
 
   if (checkingSession) {
@@ -179,8 +215,9 @@ export default function UpdatePasswordPage() {
         )}
 
         <button
+          type="button"
           onClick={handleUpdatePassword}
-          disabled={loading || !!error}
+          disabled={loading || !hasSession}
           className="w-full rounded-lg bg-black p-3 font-semibold text-white disabled:opacity-50"
         >
           {loading
