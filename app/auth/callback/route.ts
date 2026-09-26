@@ -52,23 +52,28 @@ export async function GET(request: Request) {
     await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
-    console.error(
-      "Password recovery exchange error:",
-      error
-    );
+  console.error(
+    "Password recovery exchange error:",
+    error
+  );
 
-    const errorUrl = new URL(
-      "/login",
-      url.origin
-    );
+  const errorUrl = new URL(
+    "/login",
+    url.origin
+  );
 
-    errorUrl.searchParams.set(
-      "error",
-      "password-reset"
-    );
+  errorUrl.searchParams.set(
+    "error",
+    "password-reset"
+  );
 
-    return NextResponse.redirect(errorUrl);
-  }
+  errorUrl.searchParams.set(
+    "message",
+    error.message
+  );
+
+  return NextResponse.redirect(errorUrl);
+}
 
   return response;
 }
