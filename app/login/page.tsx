@@ -1,5 +1,5 @@
 "use client";
-
+import { createRecoveryClient } from "@/lib/supabase/recovery-client";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
@@ -26,7 +26,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const supabase = createClient();
+      const supabase = createRecoveryClient();
 
       const { error: loginError } =
         await supabase.auth.signInWithPassword({
@@ -65,7 +65,7 @@ export default function LoginPage() {
       const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(email, {
           redirectTo:
-            "https://qr-catalogue-tptv.vercel.app/auth/callback?next=/update-password",
+            "https://qr-catalogue-tptv.vercel.app/update-password",
         });
 
       if (resetError) {
