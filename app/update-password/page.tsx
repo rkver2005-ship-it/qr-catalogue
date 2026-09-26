@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -12,8 +12,27 @@ export default function UpdatePasswordPage() {
   const [confirmPassword, setConfirmPassword] =
     useState("");
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] =
+    useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    async function checkRecoverySession() {
+      const { data } =
+        await supabase.auth.getSession();
+
+      if (!data.session) {
+        setError(
+          "Password reset link invalid ya expire ho gaya hai. Please naya reset link request karo."
+        );
+      }
+
+      setCheckingSession(false);
+    }
+
+    checkRecoverySession();
+  }, [supabase]);
 
   async function handleUpdatePassword() {
     setError("");
@@ -38,6 +57,17 @@ export default function UpdatePasswordPage() {
 
     setLoading(true);
 
+    const { data } =
+      await supabase.auth.getSession();
+
+    if (!data.session) {
+      setError(
+        "Password reset session nahi mila. Please naya reset link request karo."
+      );
+      setLoading(false);
+      return;
+    }
+
     const { error: updateError } =
       await supabase.auth.updateUser({
         password,
@@ -50,11 +80,25 @@ export default function UpdatePasswordPage() {
       return;
     }
 
-    setSuccess("Password updated successfully.");
+    setSuccess(
+      "Password updated successfully."
+    );
 
     setTimeout(() => {
       router.push("/login");
     }, 1500);
+  }
+
+  if (checkingSession) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gray-100 p-5 text-black">
+        <div className="w-full max-w-md rounded-xl bg-white p-6 text-center shadow">
+          <p className="text-gray-600">
+            Checking password reset link...
+          </p>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -102,7 +146,7 @@ export default function UpdatePasswordPage() {
 
         <button
           onClick={handleUpdatePassword}
-          disabled={loading}
+          disabled={loading || !!error}
           className="w-full rounded-lg bg-black p-3 font-semibold text-white disabled:opacity-50"
         >
           {loading
