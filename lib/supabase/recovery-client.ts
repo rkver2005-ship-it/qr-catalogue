@@ -6,7 +6,7 @@ export function createRecoveryClient() {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       auth: {
-        flowType: "implicit",
+        flowType: "pkce",
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true,

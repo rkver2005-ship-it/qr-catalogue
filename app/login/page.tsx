@@ -1,7 +1,8 @@
 "use client";
-import { createRecoveryClient } from "@/lib/supabase/recovery-client";
+
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { createRecoveryClient } from "@/lib/supabase/recovery-client";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -26,7 +27,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const supabase = createRecoveryClient();
+      const supabase = createClient();
 
       const { error: loginError } =
         await supabase.auth.signInWithPassword({
@@ -60,7 +61,7 @@ export default function LoginPage() {
     setResetLoading(true);
 
     try {
-      const supabase = createClient();
+      const supabase = createRecoveryClient();
 
       const { error: resetError } =
         await supabase.auth.resetPasswordForEmail(email, {
@@ -128,6 +129,7 @@ export default function LoginPage() {
         )}
 
         <button
+          type="button"
           onClick={handleLogin}
           disabled={loading}
           className="w-full rounded-lg bg-black p-3 font-semibold text-white disabled:opacity-50"
@@ -136,6 +138,7 @@ export default function LoginPage() {
         </button>
 
         <button
+          type="button"
           onClick={handleForgotPassword}
           disabled={resetLoading}
           className="mt-3 w-full p-2 text-sm font-semibold text-blue-600"
