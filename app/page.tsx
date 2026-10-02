@@ -81,6 +81,12 @@ type OrderItem = {
   price: number;
   item_total: number;
 };
+type ManualBillItem = {
+  product_id: string;
+  quantity: number;
+};
+
+
 
 export default function Home() {
   const [business, setBusiness] = useState<Business | null>(null);
@@ -171,6 +177,101 @@ const [showCancelledHistory, setShowCancelledHistory] =
     setBusiness(data);
     return data;
   }
+function openCreateBill() {
+  setBillQrToken("");
+  setBillSearch("");
+  setManualBillItems([]);
+  setShowCreateBill(true);
+}
+function closeCreateBill() {
+  setShowCreateBill(false);
+  setBillQrToken("");
+  setBillSearch("");
+  setManualBillItems([]);
+}
+function addProductToManualBill(productId: string) {
+  setManualBillItems((current) => {
+    const existing = current.find(
+      (item) => item.product_id === productId
+    );
+
+    if (existing) {
+      return current.map((item) =>
+        item.product_id === productId
+          ? { ...item, quantity: item.quantity + 1 }
+          : item
+      );
+    }
+
+    return [
+      ...current,
+      {
+        product_id: productId,
+        quantity: 1,
+      },
+    ];
+  });
+}
+function changeManualBillQuantity(
+  productId: string,
+  quantity: number
+) {
+  if (quantity <= 0) {
+    setManualBillItems((current) =>
+      current.filter((item) => item.product_id !== productId)
+    );
+    return;
+  }
+
+  setManualBillItems((current) =>
+    current.map((item) =>
+      item.product_id === productId
+        ? { ...item, quantity }
+        : item
+    )
+  );
+}
+async function createManualBill() {
+  if (manualBillItems.length === 0) {
+    alert("Pehle kam se kam 1 product add karo.");
+    return;
+  }
+
+  const businessData = await getMyBusiness();
+
+  if (!businessData) {
+    alert("Business not found");
+    return;
+  }
+
+  setCreatingBill(true);
+
+  try {
+    const { error } = await supabase.rpc("create_admin_bill", {
+      p_business_id: businessData.id,
+      p_qr_token: billQrToken || null,
+      p_items: manualBillItems,
+    });
+
+    if (error) {
+      console.error(error);
+      alert(error.message);
+      return;
+    }
+
+    await loadOrders();
+    closeCreateBill();
+
+    alert("Bill created successfully");
+  } finally {
+    setCreatingBill(false);
+  }
+}
+const [billSearch, setBillSearch] = useState("");
+const [billQrToken, setBillQrToken] = useState("");
+const [manualBillItems, setManualBillItems] = useState<ManualBillItem[]>([]);
+const [showCreateBill, setShowCreateBill] = useState(false);
+const [creatingBill, setCreatingBill] = useState(false);
 
   async function loadProducts() {
     const businessData = await getMyBusiness();
@@ -2534,7 +2635,23 @@ loadAdmin();
             </div>
           )}
         </div>
+<div className="mb-6 rounded-xl bg-white p-5 shadow">
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <h2 className="text-lg font-semibold">Create Bill</h2>
+      <p className="text-sm text-gray-500">
+        Customer order ke bina admin bill bana sakta hai.
+      </p>
+    </div>
 
+    <button
+      onClick={openCreateBill}
+      className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white"
+    >
+      + Create Bill
+    </button>
+  </div>
+</div>
         {/* ORDERS */}
 
         <div className="mb-6 rounded-xl bg-white shadow">
@@ -2975,7 +3092,331 @@ loadAdmin();
   </>
 )}
 </div>
+{showCreateBill && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
 
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">Create Bill</h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Products select karke running bill banao.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={closeCreateBill}
+          disabled={creatingBill}
+          className="rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="mt-5">
+        <label className="mb-2 block text-sm font-semibold">
+          Table / QR
+        </label>
+
+        <select
+          value={billQrToken}
+          onChange={(e) => setBillQrToken(e.target.value)}
+          className="w-full rounded-lg border bg-white p-3"
+        >
+          <option value="">Direct Bill</option>
+
+          {qrCodes
+            .filter((qr) => qr.enabled)
+            .map((qr) => (
+              <option key={qr.id} value={qr.token}>
+                {qr.name}
+              </option>
+            ))}
+        </select>
+      </div>
+
+      <div className="mt-4">
+        <input
+          value={billSearch}
+          onChange={(e) => setBillSearch(e.target.value)}
+          placeholder="🔎 Search product..."
+          className="w-full rounded-lg border p-3"
+        />
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {products
+          .filter((product) => product.available)
+          .filter((product) =>
+            product.name
+              .toLowerCase()
+              .includes(billSearch.trim().toLowerCase())
+          )
+          .map((product) => {
+            const selected = manualBillItems.find(
+              (item) => item.product_id === product.id
+            );
+
+            return (
+              <div
+                key={product.id}
+                className="flex items-center justify-between gap-3 rounded-lg border p-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold">{product.name}</p>
+
+                  <p className="text-sm text-gray-500">
+                    {formatMoney(product.price)}
+                  </p>
+                </div>
+
+                {selected ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        changeManualBillQuantity(
+                          product.id,
+                          selected.quantity - 1
+                        )
+                      }
+                      className="h-10 w-10 rounded-lg border text-lg font-bold"
+                    >
+                      −
+                    </button>
+
+                    <span className="w-8 text-center font-bold">
+                      {selected.quantity}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        changeManualBillQuantity(
+                          product.id,
+                          selected.quantity + 1
+                        )
+                      }
+                      className="h-10 w-10 rounded-lg bg-black text-lg font-bold text-white"
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => addProductToManualBill(product.id)}
+                    className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    Add
+                  </button>
+                )}
+              </div>
+            );
+          })}
+      </div>
+
+      {manualBillItems.length > 0 && (
+        <div className="mt-5 rounded-xl bg-gray-50 p-4">
+          <h3 className="font-bold">Bill Items</h3>
+
+          <div className="mt-3 space-y-2">
+            {manualBillItems.map((item) => {
+              const product = products.find(
+                (p) => p.id === item.product_id
+              );
+
+              if (!product) return null;
+
+              return (
+                <div
+                  key={item.product_id}
+                  className="flex items-center justify-between gap-3 rounded-lg bg-white p-3"
+                >
+                  <div>
+                    <p className="font-semibold">{product.name}</p>
+
+                    <p className="text-sm text-gray-500">
+                      {formatMoney(product.price)} × {item.quantity}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <p className="font-bold">
+                      {formatMoney(
+                        product.price * item.quantity
+                      )}
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        changeManualBillQuantity(
+                          item.product_id,
+                          0
+                        )
+                      }
+                      className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex justify-between border-t pt-3 text-xl font-bold">
+            <span>Total</span>
+
+            <span>
+              {formatMoney(
+                manualBillItems.reduce((sum, item) => {
+                  const product = products.find(
+                    (p) => p.id === item.product_id
+                  );
+
+                  return (
+                    sum +
+                    (product
+                      ? product.price * item.quantity
+                      : 0)
+                  );
+                }, 0)
+              )}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={closeCreateBill}
+          disabled={creatingBill}
+          className="rounded-lg border p-3 font-semibold disabled:opacity-50"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={createManualBill}
+          disabled={
+            creatingBill ||
+            manualBillItems.length === 0
+          }
+          className="rounded-lg bg-green-600 p-3 font-semibold text-white disabled:opacity-50"
+        >
+          {creatingBill ? "Creating..." : "Create Bill"}
+        </button>
+      </div>
+
+    </div>
+  </div>
+)}
+{manualBillItems.length > 0 && (
+  <div className="mt-5">
+    <h3 className="mb-2 text-sm font-semibold text-gray-700">
+      Bill Items
+    </h3>
+
+    <div className="space-y-2">
+      {manualBillItems.map((item) => {
+        const product = products.find(
+          (product) => product.id === item.product_id
+        );
+
+        if (!product) return null;
+
+        return (
+          <div
+            key={item.product_id}
+            className="flex items-center justify-between rounded-lg bg-gray-50 p-3"
+          >
+            <div>
+              <p className="font-medium">{product.name}</p>
+              <div className="flex items-center gap-2">
+  <span className="text-sm text-gray-500">
+    {formatMoney(product.price)}
+  </span>
+
+  <button
+    type="button"
+    onClick={() =>
+      changeManualBillQuantity(
+        item.product_id,
+        item.quantity - 1
+      )
+    }
+    className="h-8 w-8 rounded border"
+  >
+    −
+  </button>
+
+  <span className="min-w-6 text-center text-sm font-semibold">
+    {item.quantity}
+  </span>
+
+  <button
+    type="button"
+    onClick={() =>
+      changeManualBillQuantity(
+        item.product_id,
+        item.quantity + 1
+      )
+    }
+    className="h-8 w-8 rounded border"
+  >
+    +
+  </button>
+</div>
+            </div>
+
+            <p className="font-semibold">
+              {formatMoney(product.price * item.quantity)}
+            </p>
+          </div>
+        );
+      })}
+    </div><div className="mt-4 flex items-center justify-between border-t pt-4">
+  <span className="text-lg font-semibold">
+    Total
+  </span>
+
+  <span className="text-lg font-bold">
+    {formatMoney(
+      manualBillItems.reduce((total, item) => {
+        const product = products.find(
+          (product) => product.id === item.product_id
+        );
+
+        if (!product) return total;
+
+        return total + product.price * item.quantity;
+      }, 0)
+    )}
+  </span>
+</div>
+  <div className="mt-5 flex justify-end gap-3 border-t pt-4">
+  <button
+    type="button"
+    onClick={closeCreateBill}
+    className="rounded-lg border px-4 py-2 text-sm font-semibold"
+  >
+    Cancel
+  </button>
+
+  <button
+    type="button"
+    className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white"
+  >
+    Create Bill
+  </button>
+</div>
+</div>
+)}
         {/* ADD / EDIT PRODUCT */}
 
         <div className="mb-6 rounded-xl bg-white p-5 shadow">
