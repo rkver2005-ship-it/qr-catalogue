@@ -31,6 +31,8 @@ type Business = {
   id: string;
   name: string;
   slug: string;
+  address: string | null;
+  mobile: string | null;
 };
 
 type Category = {
@@ -160,7 +162,7 @@ const [showCancelledHistory, setShowCancelledHistory] =
 
     const { data, error } = await supabase
       .from("businesses")
-      .select("id, name, slug")
+      .select("id, name, slug, address, mobile")
       .eq("owner_id", user.id)
       .maybeSingle();
 
@@ -173,6 +175,7 @@ const [showCancelledHistory, setShowCancelledHistory] =
       console.error("Business not found");
       return null;
     }
+    console.log("BUSINESS DATA:", data);
 
     setBusiness(data);
     return data;
@@ -479,6 +482,9 @@ function printGroupBill(group: OrderGroup) {
     (sum, order) => sum + Number(order.total),
     0
   );
+    const businessName = business?.name || "Restaurant";
+  const businessAddress = business?.address || "";
+  const businessMobile = business?.mobile || "";
 
   billWindow.document.write(`
     <html>
@@ -535,10 +541,24 @@ function printGroupBill(group: OrderGroup) {
       </head>
 
       <body>
-        <h1>Running Bill</h1>
+                <h1>${escapeHtml(businessName)}</h1>
+
+        ${
+          businessAddress
+            ? `<p class="muted">${escapeHtml(businessAddress)}</p>`
+            : ""
+        }
+
+        ${
+          businessMobile
+            ? `<p class="muted">Mobile: ${escapeHtml(businessMobile)}</p>`
+            : ""
+        }
+
+        <h2>Running Bill</h2>
 
         <p class="muted">
-          ${group.qr_name || "Direct Order"}
+          ${escapeHtml(group.qr_name || "Direct Order")}
         </p>
 
         <p class="muted">
@@ -614,6 +634,8 @@ function printGroupBill(group: OrderGroup) {
     );
 
     const businessName = business?.name || "Restaurant";
+const businessAddress = business?.address || "";
+const businessMobile = business?.mobile || "";
     const orderDate = new Date(order.created_at).toLocaleString();
 
     const itemsHtml = items
