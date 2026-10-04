@@ -79,6 +79,7 @@ type OrderGroup = {
 type OrderItem = {
   id: string;
   order_id: string;
+  product_id: string;
   product_name: string;
   quantity: number;
   price: number;
@@ -278,6 +279,17 @@ const [billSearch, setBillSearch] = useState("");
 const [billQrToken, setBillQrToken] = useState("");
 const [manualBillItems, setManualBillItems] = useState<ManualBillItem[]>([]);
 const [showCreateBill, setShowCreateBill] = useState(false);
+const [showEditBill, setShowEditBill] = useState(false);
+const [editBillItems, setEditBillItems] = useState<
+  {
+    product_id: string;
+    product_name: string;
+    quantity: number;
+    price: number;
+  }[]
+>([]);
+const [editBillGroup, setEditBillGroup] =
+  useState<OrderGroup | null>(null);
 const [creatingBill, setCreatingBill] = useState(false);
 const [billDiscount, setBillDiscount] = useState(0);
 
@@ -351,7 +363,7 @@ const [billDiscount, setBillDiscount] = useState(0);
     const { data: itemData, error: itemError } = await supabase
       .from("order_items")
       .select(
-        "id, order_id, product_name, quantity, price, item_total"
+        "id, order_id, product_id, product_name, quantity, price, item_total"
       )
       .in("order_id", orderIds);
 
@@ -464,6 +476,68 @@ async function cancelGroup(group: OrderGroup) {
   await loadOrders();
 
   alert("Bill cancelled successfully");
+}
+function openEditBill(group: OrderGroup) {
+  setEditBillGroup(group);
+
+  const items = orderItems
+    .filter((item) =>
+      group.orders.some(
+        (order) => order.id === item.order_id
+      )
+    )
+    .map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: item.quantity,
+      price: Number(item.price),
+    }));
+
+  setEditBillItems(items);
+  setShowEditBill(true);
+}
+async function saveEditBill() {
+  if (!editBillGroup) {
+    return;
+  }
+
+  if (editBillItems.length === 0) {
+    alert("Bill mein kam se kam 1 product hona chahiye.");
+    return;
+  }
+
+  const businessData = await getMyBusiness();
+
+  if (!businessData) {
+    alert("Business not found");
+    return;
+  }
+
+  const { error } = await supabase.rpc(
+    "edit_running_bill",
+    {
+      p_business_id: businessData.id,
+      p_session_id: editBillGroup.session_id,
+      p_items: editBillItems.map((item) => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+      })),
+    }
+  );
+
+  if (error) {
+    console.error(error);
+    alert(error.message);
+    return;
+  }
+
+  setShowEditBill(false);
+  setEditBillGroup(null);
+  setEditBillItems([]);
+
+  await loadOrders();
+
+  alert("Bill updated successfully");
 }
 async function applyGroupDiscount(group: OrderGroup) {
   const discountInput = window.prompt(
@@ -2918,6 +2992,15 @@ loadAdmin();
   >
     💰 Paid
   </button>
+  <button
+  onClick={() =>
+    openEditBill(group)
+  }
+  className="rounded-lg bg-blue-600 p-3 text-sm font-semibold text-white"
+>
+  ✏️ Edit Bill
+</button>
+
 <button
   onClick={() =>
     applyGroupDiscount(group)
@@ -3546,6 +3629,229 @@ loadAdmin();
   </button>
 </div>
 </div>
+)}{showEditBill && editBillGroup && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">
+            Edit Bill
+          </h2>
+
+          <p className="mt-1 text-sm text-gray-500">
+            Product add, remove ya quantity change karo.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setShowEditBill(false);
+            setEditBillGroup(null);
+            setEditBillItems([]);
+          }}
+          className="rounded-lg border px-3 py-2 text-sm font-semibold"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div className="mt-5 space-y-2">
+        {products
+          .filter((product) => product.available)
+          .map((product) => {
+            const selected = editBillItems.find(
+              (item) => item.product_id === product.id
+            );
+
+            return (
+              <div
+                key={product.id}
+                className="flex items-center justify-between gap-3 rounded-lg border p-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-semibold">
+                    {product.name}
+                  </p>
+
+                  <p className="text-sm text-gray-500">
+                    {formatMoney(product.price)}
+                  </p>
+                </div>
+
+                {selected ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selected.quantity <= 1) {
+                          setEditBillItems((items) =>
+                            items.filter(
+                              (item) =>
+                                item.product_id !==
+                                product.id
+                            )
+                          );
+                        } else {
+                          setEditBillItems((items) =>
+                            items.map((item) =>
+                              item.product_id === product.id
+                                ? {
+                                    ...item,
+                                    quantity:
+                                      item.quantity - 1,
+                                  }
+                                : item
+                            )
+                          );
+                        }
+                      }}
+                      className="h-10 w-10 rounded-lg border text-lg font-bold"
+                    >
+                      −
+                    </button>
+
+                    <span className="w-8 text-center font-bold">
+                      {selected.quantity}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditBillItems((items) =>
+                          items.map((item) =>
+                            item.product_id === product.id
+                              ? {
+                                  ...item,
+                                  quantity:
+                                    item.quantity + 1,
+                                }
+                              : item
+                          )
+                        )
+                      }
+                      className="h-10 w-10 rounded-lg bg-black text-lg font-bold text-white"
+                    >
+                      +
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditBillItems((items) => [
+                        ...items,
+                        {
+                          product_id: product.id,
+                          product_name: product.name,
+                          quantity: 1,
+                          price: Number(product.price),
+                        },
+                      ])
+                    }
+                    className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white"
+                  >
+                    Add
+                  </button>
+                )}
+              </div>
+            );
+          })}
+      </div>
+
+      {editBillItems.length > 0 && (
+        <div className="mt-5 rounded-xl bg-gray-50 p-4">
+          <h3 className="font-bold">
+            Current Bill Items
+          </h3>
+
+          <div className="mt-3 space-y-2">
+            {editBillItems.map((item) => (
+              <div
+                key={item.product_id}
+                className="flex items-center justify-between gap-3 rounded-lg bg-white p-3"
+              >
+                <div>
+                  <p className="font-semibold">
+                    {item.product_name}
+                  </p>
+
+                  <p className="text-sm text-gray-500">
+                    {formatMoney(item.price)} ×{" "}
+                    {item.quantity}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <p className="font-bold">
+                    {formatMoney(
+                      item.price * item.quantity
+                    )}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditBillItems((items) =>
+                        items.filter(
+                          (currentItem) =>
+                            currentItem.product_id !==
+                            item.product_id
+                        )
+                      )
+                    }
+                    className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex justify-between border-t pt-3 text-xl font-bold">
+            <span>Total</span>
+
+            <span>
+              {formatMoney(
+                editBillItems.reduce(
+                  (sum, item) =>
+                    sum +
+                    item.price * item.quantity,
+                  0
+                )
+              )}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setShowEditBill(false);
+            setEditBillGroup(null);
+            setEditBillItems([]);
+          }}
+          className="rounded-lg border p-3 font-semibold"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={saveEditBill}
+          disabled={editBillItems.length === 0}
+          className="rounded-lg bg-green-600 p-3 font-semibold text-white disabled:opacity-50"
+        >
+          Save Changes
+        </button>
+      </div>
+
+    </div>
+  </div>
 )}
         {/* ADD / EDIT PRODUCT */}
 
