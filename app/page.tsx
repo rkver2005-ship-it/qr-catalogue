@@ -63,6 +63,7 @@ type Order = {
   qr_name: string | null;
   session_id: string | null;
   total: number;
+  discount: number;
   created_at: string;
   cancelled: boolean;
   paid: boolean;
@@ -184,6 +185,7 @@ function openCreateBill() {
   setBillQrToken("");
   setBillSearch("");
   setManualBillItems([]);
+  setBillDiscount(0);
   setShowCreateBill(true);
 }
 function closeCreateBill() {
@@ -191,6 +193,7 @@ function closeCreateBill() {
   setBillQrToken("");
   setBillSearch("");
   setManualBillItems([]);
+  setBillDiscount(0);
 }
 function addProductToManualBill(productId: string) {
   setManualBillItems((current) => {
@@ -254,6 +257,7 @@ async function createManualBill() {
       p_business_id: businessData.id,
       p_qr_token: billQrToken || null,
       p_items: manualBillItems,
+      p_discount: billDiscount,
     });
 
     if (error) {
@@ -275,6 +279,7 @@ const [billQrToken, setBillQrToken] = useState("");
 const [manualBillItems, setManualBillItems] = useState<ManualBillItem[]>([]);
 const [showCreateBill, setShowCreateBill] = useState(false);
 const [creatingBill, setCreatingBill] = useState(false);
+const [billDiscount, setBillDiscount] = useState(0);
 
   async function loadProducts() {
     const businessData = await getMyBusiness();
@@ -324,8 +329,8 @@ const [creatingBill, setCreatingBill] = useState(false);
     const { data: orderData, error: orderError } = await supabase
   .from("orders")
   .select(
-    "id, order_number, qr_name, session_id, total, created_at, cancelled, paid"
-  )
+  "id, order_number, qr_name, session_id, total, discount, created_at, cancelled, paid"
+)
   .eq("business_id", businessData.id)
   .order("created_at", { ascending: false });
 
@@ -460,6 +465,48 @@ async function cancelGroup(group: OrderGroup) {
 
   alert("Bill cancelled successfully");
 }
+async function applyGroupDiscount(group: OrderGroup) {
+  const discountInput = window.prompt(
+    "Discount amount enter karo:"
+  );
+
+  if (discountInput === null) {
+    return;
+  }
+
+  const discount = Number(discountInput);
+
+  if (!Number.isFinite(discount) || discount < 0) {
+    alert("Valid discount amount enter karo.");
+    return;
+  }
+
+  const businessData = await getMyBusiness();
+
+  if (!businessData) {
+    alert("Business not found");
+    return;
+  }
+
+  const { error } = await supabase.rpc(
+    "apply_bill_discount",
+    {
+      p_business_id: businessData.id,
+      p_session_id: group.session_id,
+      p_discount: discount,
+    }
+  );
+
+  if (error) {
+    console.error(error);
+    alert(error.message);
+    return;
+  }
+
+  await loadOrders();
+
+  alert("Discount applied successfully");
+}
 function printGroupBill(group: OrderGroup) {
   const groupItems = orderItems.filter((item) =>
     group.orders.some(
@@ -482,6 +529,12 @@ function printGroupBill(group: OrderGroup) {
     (sum, order) => sum + Number(order.total),
     0
   );
+  const billDiscount = group.orders.reduce(
+  (sum, order) => sum + Number(order.discount || 0),
+  0
+);
+
+const billSubtotal = billTotal + billDiscount;
     const businessName = business?.name || "Restaurant";
   const businessAddress = business?.address || "";
   const businessMobile = business?.mobile || "";
@@ -612,9 +665,25 @@ function printGroupBill(group: OrderGroup) {
         </table>
 
         <div class="total">
-          <span>Bill Total</span>
-          <span>${formatMoney(billTotal)}</span>
-        </div>
+  <span>Subtotal</span>
+  <span>${formatMoney(billSubtotal)}</span>
+</div>
+
+${
+  billDiscount > 0
+    ? `
+      <div class="total" style="border-top: 0; margin-top: 10px; padding-top: 0;">
+        <span>Discount</span>
+        <span>- ${formatMoney(billDiscount)}</span>
+      </div>
+    `
+    : ""
+}
+
+<div class="total">
+  <span>Grand Total</span>
+  <span>${formatMoney(billTotal)}</span>
+</div>
       </body>
     </html>
   `);
@@ -1679,12 +1748,13 @@ function downloadLast30DaysCSV() {
   const groups: Record<
     string,
     {
-      session_id: string;
-      orders: Order[];
-      total: number;
-      qr_name: string | null;
-      created_at: string;
-    }
+  session_id: string;
+  orders: Order[];
+  total: number;
+  discount: number;
+  qr_name: string | null;
+  created_at: string;
+}
   > = {};
 
   orders
@@ -1703,6 +1773,7 @@ function downloadLast30DaysCSV() {
           session_id: groupKey,
           orders: [],
           total: 0,
+          discount: 0,
           qr_name: order.qr_name,
           created_at: order.created_at,
         };
@@ -1713,6 +1784,9 @@ function downloadLast30DaysCSV() {
       groups[groupKey].total += Number(
         order.total
       );
+      groups[groupKey].discount += Number(
+  order.discount || 0
+);
 
       if (
         new Date(order.created_at) <
@@ -2826,7 +2900,7 @@ loadAdmin();
                 ))}
               </div>
 
-              <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="mt-4 grid grid-cols-4 gap-2">
   <button
     onClick={() =>
       printGroupBill(group)
@@ -2844,7 +2918,14 @@ loadAdmin();
   >
     💰 Paid
   </button>
-
+<button
+  onClick={() =>
+    applyGroupDiscount(group)
+  }
+  className="rounded-lg bg-orange-500 p-3 text-sm font-semibold text-white"
+>
+  🏷️ Discount
+</button>
   <button
     onClick={() =>
       cancelGroup(group)
@@ -2858,7 +2939,20 @@ loadAdmin();
           );
         })}
       </div>
+      
+{group.discount > 0 && (
+  <div className="mt-3 space-y-2 border-t pt-3 text-sm">
+    <div className="flex justify-between">
+      <span>Subtotal</span>
+      <span>{formatMoney(group.total + group.discount)}</span>
+    </div>
 
+    <div className="flex justify-between text-red-600">
+      <span>Discount</span>
+      <span>- {formatMoney(group.discount)}</span>
+    </div>
+  </div>
+)}
       <div className="mt-4 flex justify-between border-t pt-3 text-lg font-bold">
         <span>Running Bill Total</span>
 
@@ -3311,6 +3405,20 @@ loadAdmin();
           </div>
         </div>
       )}
+            <div className="mt-4">
+        <label className="mb-2 block text-sm font-semibold">
+          Discount
+        </label>
+
+        <input
+          type="number"
+          min="0"
+          value={billDiscount}
+          onChange={(e) => setBillDiscount(Number(e.target.value) || 0)}
+          placeholder="0"
+          className="w-full rounded-lg border p-3"
+        />
+      </div>
 
       <div className="mt-5 grid grid-cols-2 gap-2">
         <button
