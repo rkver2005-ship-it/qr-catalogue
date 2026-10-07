@@ -682,7 +682,7 @@ const billSubtotal = billTotal + billDiscount;
             : ""
         }
 
-        <h2>Invoice</h2>
+        <h2>INVOICE</h2>
 
         <p class="muted">
           ${escapeHtml(group.qr_name || "Direct Order")}
