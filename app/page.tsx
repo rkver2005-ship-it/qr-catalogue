@@ -86,8 +86,10 @@ type OrderItem = {
   item_total: number;
 };
 type ManualBillItem = {
-  product_id: string;
+  product_id: string | null;
   quantity: number;
+  product_name?: string;
+  price?: number;
 };
 
 
@@ -186,17 +188,26 @@ function openCreateBill() {
   setBillQrToken("");
   setBillSearch("");
   setManualBillItems([]);
+
+  setManualProductName("");
+  setManualProductPrice("");
+  setManualProductQty("1");
+
   setBillDiscount(0);
   setShowCreateBill(true);
 }
 function closeCreateBill() {
   setShowCreateBill(false);
   setBillQrToken("");
-  setBillSearch("");
   setManualBillItems([]);
+
+  setManualProductName("");
+  setManualProductPrice("");
+  setManualProductQty("1");
+
   setBillDiscount(0);
 }
-function addProductToManualBill(productId: string) {
+function addProductToManualBill(productId: string | null) {
   setManualBillItems((current) => {
     const existing = current.find(
       (item) => item.product_id === productId
@@ -220,7 +231,7 @@ function addProductToManualBill(productId: string) {
   });
 }
 function changeManualBillQuantity(
-  productId: string,
+  productId: string | null,
   quantity: number
 ) {
   if (quantity <= 0) {
@@ -233,6 +244,59 @@ function changeManualBillQuantity(
   setManualBillItems((current) =>
     current.map((item) =>
       item.product_id === productId
+        ? { ...item, quantity }
+        : item
+    )
+  );
+}
+function addManualCustomItem() {
+  const productName = manualProductName.trim();
+  const price = Number(manualProductPrice);
+  const quantity = Number(manualProductQty);
+
+  if (!productName) {
+    alert("Product name enter karo.");
+    return;
+  }
+
+  if (!Number.isFinite(price) || price <= 0) {
+    alert("Valid price enter karo.");
+    return;
+  }
+
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    alert("Valid quantity enter karo.");
+    return;
+  }
+
+  setManualBillItems((current) => [
+    ...current,
+    {
+      product_id: null,
+      product_name: productName,
+      price,
+      quantity,
+    },
+  ]);
+
+  setManualProductName("");
+  setManualProductPrice("");
+  setManualProductQty("1");
+}
+function changeManualCustomItemQuantity(
+  index: number,
+  quantity: number
+) {
+  if (quantity <= 0) {
+    setManualBillItems((current) =>
+      current.filter((_, itemIndex) => itemIndex !== index)
+    );
+    return;
+  }
+
+  setManualBillItems((current) =>
+    current.map((item, itemIndex) =>
+      itemIndex === index
         ? { ...item, quantity }
         : item
     )
@@ -279,6 +343,9 @@ const [billSearch, setBillSearch] = useState("");
 const [billQrToken, setBillQrToken] = useState("");
 const [manualBillItems, setManualBillItems] = useState<ManualBillItem[]>([]);
 const [showCreateBill, setShowCreateBill] = useState(false);
+const [manualProductName, setManualProductName] = useState("");
+const [manualProductPrice, setManualProductPrice] = useState("");
+const [manualProductQty, setManualProductQty] = useState("1");
 const [showEditBill, setShowEditBill] = useState(false);
 const [editBillItems, setEditBillItems] = useState<
   {
@@ -292,6 +359,10 @@ const [editBillGroup, setEditBillGroup] =
   useState<OrderGroup | null>(null);
 const [creatingBill, setCreatingBill] = useState(false);
 const [billDiscount, setBillDiscount] = useState(0);
+const [showExtraCharge, setShowExtraCharge] = useState(false);
+const [extraChargeName, setExtraChargeName] = useState("");
+const [extraChargePrice, setExtraChargePrice] = useState(0);
+
 
   async function loadProducts() {
     const businessData = await getMyBusiness();
@@ -3334,7 +3405,53 @@ loadAdmin();
             ))}
         </select>
       </div>
+<div className="mt-5 rounded-xl border bg-gray-50 p-4">
+  <h3 className="font-bold">Add Custom Item</h3>
 
+  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+    <input
+      type="text"
+      value={manualProductName}
+      onChange={(e) =>
+        setManualProductName(e.target.value)
+      }
+      placeholder="Product name"
+      className="rounded-lg border bg-white p-3"
+    />
+
+    <input
+      type="number"
+      min="0"
+      step="0.01"
+      value={manualProductPrice}
+      onChange={(e) =>
+        setManualProductPrice(e.target.value)
+      }
+      placeholder="Price"
+      className="rounded-lg border bg-white p-3"
+    />
+
+    <input
+      type="number"
+      min="1"
+      step="1"
+      value={manualProductQty}
+      onChange={(e) =>
+        setManualProductQty(e.target.value)
+      }
+      placeholder="Qty"
+      className="rounded-lg border bg-white p-3"
+    />
+  </div>
+
+  <button
+    type="button"
+    onClick={addManualCustomItem}
+    className="mt-3 rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white"
+  >
+    + Add Item
+  </button>
+</div>
       <div className="mt-4">
         <input
           value={billSearch}
@@ -3343,6 +3460,7 @@ loadAdmin();
           className="w-full rounded-lg border p-3"
         />
       </div>
+      
 
       <div className="mt-4 space-y-2">
         {products
@@ -3417,77 +3535,166 @@ loadAdmin();
       </div>
 
       {manualBillItems.length > 0 && (
-        <div className="mt-5 rounded-xl bg-gray-50 p-4">
-          <h3 className="font-bold">Bill Items</h3>
+  <div className="mt-5 rounded-xl bg-gray-50 p-4">
+    <h3 className="font-bold">Bill Items</h3>
 
-          <div className="mt-3 space-y-2">
-            {manualBillItems.map((item) => {
-              const product = products.find(
-                (p) => p.id === item.product_id
-              );
+    <div className="mt-3 space-y-2">
+      {manualBillItems.map((item, index) => {
+        const product = item.product_id
+          ? products.find((p) => p.id === item.product_id)
+          : null;
 
-              if (!product) return null;
+        const itemName = item.product_name || product?.name || "Item";
+        const itemPrice =
+          item.price !== undefined
+            ? Number(item.price)
+            : Number(product?.price || 0);
 
-              return (
-                <div
-                  key={item.product_id}
-                  className="flex items-center justify-between gap-3 rounded-lg bg-white p-3"
-                >
-                  <div>
-                    <p className="font-semibold">{product.name}</p>
+        const isCustomItem = item.product_id === null;
 
-                    <p className="text-sm text-gray-500">
-                      {formatMoney(product.price)} × {item.quantity}
-                    </p>
-                  </div>
+        return (
+          <div
+            key={`${item.product_id ?? "custom"}-${index}`}
+            className="rounded-lg bg-white p-3"
+          >
+            {isCustomItem ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  type="text"
+                  value={item.product_name || ""}
+                  onChange={(e) =>
+                    setManualBillItems((current) =>
+                      current.map((currentItem, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...currentItem,
+                              product_name: e.target.value,
+                            }
+                          : currentItem
+                      )
+                    )
+                  }
+                  placeholder="Product name"
+                  className="rounded-lg border p-2"
+                />
 
-                  <div className="flex items-center gap-2">
-                    <p className="font-bold">
-                      {formatMoney(
-                        product.price * item.quantity
-                      )}
-                    </p>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={itemPrice}
+                  onChange={(e) =>
+                    setManualBillItems((current) =>
+                      current.map((currentItem, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...currentItem,
+                              price: Number(e.target.value) || 0,
+                            }
+                          : currentItem
+                      )
+                    )
+                  }
+                  placeholder="Price"
+                  className="rounded-lg border p-2"
+                />
+              </div>
+            ) : (
+              <p className="font-semibold">{itemName}</p>
+            )}
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        changeManualBillQuantity(
-                          item.product_id,
-                          0
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    isCustomItem
+                      ? changeManualCustomItemQuantity(
+                          index,
+                          item.quantity - 1
                         )
-                      }
-                      className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                      : changeManualBillQuantity(
+                          item.product_id,
+                          item.quantity - 1
+                        )
+                  }
+                  className="h-8 w-8 rounded border"
+                >
+                  −
+                </button>
+
+                <span className="min-w-6 text-center font-semibold">
+                  {item.quantity}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    isCustomItem
+                      ? changeManualCustomItemQuantity(
+                          index,
+                          item.quantity + 1
+                        )
+                      : changeManualBillQuantity(
+                          item.product_id,
+                          item.quantity + 1
+                        )
+                  }
+                  className="h-8 w-8 rounded border"
+                >
+                  +
+                </button>
+
+                <span className="ml-2 text-sm text-gray-500">
+                  {formatMoney(itemPrice)} × {item.quantity}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <p className="font-bold">
+                  {formatMoney(itemPrice * item.quantity)}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    isCustomItem
+                      ? changeManualCustomItemQuantity(index, 0)
+                      : changeManualBillQuantity(item.product_id, 0)
+                  }
+                  className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
           </div>
+        );
+      })}
+    </div>
 
-          <div className="mt-4 flex justify-between border-t pt-3 text-xl font-bold">
-            <span>Total</span>
+    <div className="mt-4 flex justify-between border-t pt-3 text-xl font-bold">
+      <span>Total</span>
 
-            <span>
-              {formatMoney(
-                manualBillItems.reduce((sum, item) => {
-                  const product = products.find(
-                    (p) => p.id === item.product_id
-                  );
+      <span>
+        {formatMoney(
+          manualBillItems.reduce((sum, item) => {
+            const product = item.product_id
+              ? products.find((p) => p.id === item.product_id)
+              : null;
 
-                  return (
-                    sum +
-                    (product
-                      ? product.price * item.quantity
-                      : 0)
-                  );
-                }, 0)
-              )}
-            </span>
-          </div>
-        </div>
-      )}
+            const price =
+              item.price !== undefined
+                ? Number(item.price)
+                : Number(product?.price || 0);
+
+            return sum + price * item.quantity;
+          }, 0)
+        )}
+      </span>
+    </div>
+  </div>
+)}
             <div className="mt-4">
         <label className="mb-2 block text-sm font-semibold">
           Discount
