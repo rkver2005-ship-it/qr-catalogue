@@ -89,7 +89,7 @@ export default function MenuPage() {
   useState<string | null>(null);
 
 const [timeLeft, setTimeLeft] =
-    useState(3 * 60 * 60);
+  useState(2 * 60 * 60);
 
 const [sessionExpired, setSessionExpired] =
     useState(false);
@@ -256,7 +256,7 @@ const [sessionExpired, setSessionExpired] =
   ) {
     currentSessionId = crypto.randomUUID();
     currentSessionExpiry =
-  Date.now() + 3 * 60 * 60 * 1000;
+  Date.now() + 2 * 60 * 60 * 1000;
 
     try {
       localStorage.setItem(
@@ -274,15 +274,58 @@ const [sessionExpired, setSessionExpired] =
     }
   }
 
-  setSessionId(currentSessionId);
-  setSessionExpiry(currentSessionExpiry);
+  
+const { data: sessionData, error: sessionError } =
+  await supabase.rpc("start_qr_menu_session", {
+    p_business_id: businessData.id,
+    p_qr_token: qrToken,
+    p_session_id: currentSessionId,
+  });
+
+if (sessionError) {
+  setError(sessionError.message);
+  setLoading(false);
+  return;
 }
 
-      /*
-        =========================
-        LOAD CATEGORIES
-        =========================
-      */
+const activeSession = Array.isArray(sessionData)
+  ? sessionData[0]
+  : sessionData;
+
+if (!activeSession?.session_id || !activeSession?.expires_at) {
+  setError("QR session start nahi ho paya. Dobara scan karein.");
+  setLoading(false);
+  return;
+}
+
+const serverExpiry = new Date(
+  activeSession.expires_at
+).getTime();
+
+setSessionId(activeSession.session_id);
+setSessionExpiry(serverExpiry);
+
+try {
+  localStorage.setItem(
+    sessionStorageKey,
+    JSON.stringify({
+      session_id: activeSession.session_id,
+      expires_at: serverExpiry,
+    })
+  );
+
+} catch (storageError) {
+  console.error("Customer session save error:", storageError);
+}
+
+} // QR CHECK block ends here
+
+/*
+  =========================
+  LOAD CATEGORIES
+  =========================
+*/
+
 
       const {
         data: categoryData,
@@ -329,9 +372,12 @@ const [sessionExpired, setSessionExpired] =
       setLoading(false);
     }
 
+    
     loadMenu();
   }, []);
-    useEffect(() => {
+
+  useEffect(() => {
+
     if (sessionExpiry === null) {
       return;
     }
