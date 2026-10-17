@@ -218,29 +218,50 @@ const [sessionExpired, setSessionExpired] =
 
   setQrName(qrData.name);
 
+  
   const sessionStorageKey =
     `customer-session-${businessData.id}-${qrToken}`;
 
   let currentSessionId: string | null = null;
   let currentSessionExpiry: number | null = null;
+  let savedSessionExists = false;
 
   try {
     const savedSession = localStorage.getItem(
       sessionStorageKey
     );
 
-    if (savedSession) {
+    if (savedSession !== null) {
+      savedSessionExists = true;
+
       const parsedSession = JSON.parse(savedSession);
 
       if (
-        parsedSession.session_id &&
-        parsedSession.expires_at &&
-        Number(parsedSession.expires_at) > Date.now()
+        !parsedSession.session_id ||
+        !parsedSession.expires_at
       ) {
-        currentSessionId = parsedSession.session_id;
-        currentSessionExpiry = Number(
-          parsedSession.expires_at
+        setError(
+          "Session invalid hai. Please QR code dobara scan karein."
         );
+        setLoading(false);
+        return;
+      }
+
+      currentSessionId = parsedSession.session_id;
+      currentSessionExpiry = Number(
+        parsedSession.expires_at
+      );
+
+      if (
+        !Number.isFinite(currentSessionExpiry) ||
+        currentSessionExpiry <= Date.now()
+      ) {
+        setError(
+          "QR session expired. Please scan the QR code again."
+        );
+        setSessionExpired(true);
+        setLoading(false);
+        return;
       }
     }
   } catch (storageError) {
@@ -248,22 +269,24 @@ const [sessionExpired, setSessionExpired] =
       "Customer session load error:",
       storageError
     );
+
+    setError(
+      "Session check nahi ho paya. Browser storage check karein."
+    );
+    setLoading(false);
+    return;
   }
 
-  if (
-    !currentSessionId ||
-    !currentSessionExpiry
-  ) {
+  // Only create a session when this browser has no saved session.
+  if (!savedSessionExists) {
     currentSessionId = crypto.randomUUID();
-    currentSessionExpiry =
-  Date.now() + 2 * 60 * 60 * 1000;
 
     try {
       localStorage.setItem(
         sessionStorageKey,
         JSON.stringify({
           session_id: currentSessionId,
-          expires_at: currentSessionExpiry,
+          expires_at: Date.now() + 2 * 60 * 60 * 1000,
         })
       );
     } catch (storageError) {
@@ -271,8 +294,15 @@ const [sessionExpired, setSessionExpired] =
         "Customer session save error:",
         storageError
       );
+
+      setError(
+        "Session save nahi ho paya. Browser storage enable karein."
+      );
+      setLoading(false);
+      return;
     }
   }
+
 
   
 const { data: sessionData, error: sessionError } =
