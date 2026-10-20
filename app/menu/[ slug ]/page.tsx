@@ -253,16 +253,15 @@ const [sessionExpired, setSessionExpired] =
       );
 
       if (
-        !Number.isFinite(currentSessionExpiry) ||
-        currentSessionExpiry <= Date.now()
-      ) {
-        setError(
-          "QR session expired. Please scan the QR code again."
-        );
-        setSessionExpired(true);
-        setLoading(false);
-        return;
-      }
+  !Number.isFinite(currentSessionExpiry) ||
+  currentSessionExpiry <= Date.now()
+) {
+  localStorage.removeItem(sessionStorageKey);
+
+  currentSessionId = null;
+  currentSessionExpiry = null;
+  savedSessionExists = false;
+}
     }
   } catch (storageError) {
     console.error(
@@ -704,19 +703,43 @@ try {
     );
   }
 
-  if (error) {
-    return (
-      <main className="min-h-screen bg-white p-6 text-black">
-        <h1 className="text-xl font-bold">
-          Menu Error
-        </h1>
+  
+if (error) {
+  return (
+    <main className="min-h-screen bg-white p-6 text-black">
+      <h1 className="text-xl font-bold">
+        Menu Error
+      </h1>
 
-        <p className="mt-3">
-          {error}
-        </p>
-      </main>
-    );
-  }
+      <p className="mt-3">
+        {error}
+      </p>
+
+      {sessionExpired && (
+        <button
+          onClick={() => {
+            const params = new URLSearchParams(
+              window.location.search
+            );
+            const qrToken = params.get("qr");
+
+            if (business && qrToken) {
+              const key =
+                `customer-session-${business.id}-${qrToken}`;
+
+              localStorage.removeItem(key);
+              window.location.reload();
+            }
+          }}
+          className="mt-5 rounded-lg bg-black px-5 py-3 font-semibold text-white"
+        >
+          Start New Session
+        </button>
+      )}
+    </main>
+  );
+}
+
 
   if (!business) {
     return (
