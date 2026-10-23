@@ -486,11 +486,22 @@ try {
         quantity: item.quantity,
       }));
 
+     
       /*
-        =========================
         CREATE SECURE ORDER
-        =========================
       */
+
+      if (
+        !sessionId ||
+        !sessionExpiry ||
+        Date.now() >= sessionExpiry
+      ) {
+        setSessionExpired(true);
+        setError(
+          "QR session expire ho gaya. Order karne ke liye QR code dobara scan karein."
+        );
+        return;
+      }
 
       const {
         data,
@@ -520,6 +531,7 @@ try {
       if (!orderData) {
         throw new Error("Order create nahi hua");
       }
+
 
       /*
         =========================
