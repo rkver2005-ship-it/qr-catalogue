@@ -252,16 +252,19 @@ const [sessionExpired, setSessionExpired] =
         parsedSession.expires_at
       );
 
-      if (
+      
+if (
   !Number.isFinite(currentSessionExpiry) ||
   currentSessionExpiry <= Date.now()
 ) {
-  localStorage.removeItem(sessionStorageKey);
-
-  currentSessionId = null;
-  currentSessionExpiry = null;
-  savedSessionExists = false;
+  setSessionExpired(true);
+  setError(
+    "QR session expire ho gaya. Order karne ke liye QR code dobara scan karein."
+  );
+  setLoading(false);
+  return;
 }
+
     }
   } catch (storageError) {
     console.error(
@@ -333,15 +336,14 @@ const serverExpiry = new Date(
 
 setSessionId(activeSession.session_id);
 setSessionExpiry(serverExpiry);
-
 try {
-  localStorage.setItem(
-    sessionStorageKey,
-    JSON.stringify({
-      session_id: activeSession.session_id,
-      expires_at: serverExpiry,
-    })
-  );
+ localStorage.setItem(
+  sessionStorageKey,
+  JSON.stringify({
+    session_id: activeSession.session_id,
+    expires_at: serverExpiry,
+  })
+);
 
 } catch (storageError) {
   console.error("Customer session save error:", storageError);
