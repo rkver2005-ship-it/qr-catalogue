@@ -729,27 +729,7 @@ if (error) {
         {error}
       </p>
 
-      {sessionExpired && (
-        <button
-          onClick={() => {
-            const params = new URLSearchParams(
-              window.location.search
-            );
-            const qrToken = params.get("qr");
-
-            if (business && qrToken) {
-              const key =
-                `customer-session-${business.id}-${qrToken}`;
-
-              localStorage.removeItem(key);
-              window.location.reload();
-            }
-          }}
-          className="mt-5 rounded-lg bg-black px-5 py-3 font-semibold text-white"
-        >
-          Start New Session
-        </button>
-      )}
+      
     </main>
   );
 }
