@@ -195,12 +195,9 @@ export default function MenuPage() {
               }
 
               if (currentSessionExpiry <= Date.now()) {
-                // Do not renew an expired session.
-                setSessionId(currentSessionId);
-                setSessionExpiry(currentSessionExpiry);
-                setSessionExpired(true);
-                shouldCallSessionRpc = false;
-              }
+  currentSessionId = crypto.randomUUID();
+  currentSessionExpiry = null;
+}
             } else {
               currentSessionId = crypto.randomUUID();
             }
