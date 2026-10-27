@@ -220,11 +220,13 @@ const [sessionExpired, setSessionExpired] =
 
   
   
+
 const sessionStorageKey =
   `customer-session-${businessData.id}-${qrToken}`;
 
 let currentSessionId: string | null = null;
 let currentSessionExpiry: number | null = null;
+let shouldCallSessionRpc = true;
 
 try {
   const savedSession = localStorage.getItem(
@@ -248,85 +250,88 @@ try {
       return;
     }
 
-    // Expired session ko delete ya renew nahi karna.
     if (currentSessionExpiry <= Date.now()) {
+      // Expired session ko renew nahi karna.
       setSessionId(currentSessionId);
       setSessionExpiry(currentSessionExpiry);
       setSessionExpired(true);
+      shouldCallSessionRpc = false;
+    }
+  } else {
+    // Sirf saved session na hone par naya ID banao.
+    currentSessionId = crypto.randomUUID();
+  }
+} catch (storageError) {
+  console.error("Customer session load error:", storageError);
+  setError("Session check nahi ho paya. Browser storage check karein.");
+  setLoading(false);
+  return;
+}
+
+if (shouldCallSessionRpc) {
+  const {
+    data: sessionData,
+    error: sessionError,
+  } = await supabase.rpc("start_qr_menu_session", {
+    p_business_id: businessData.id,
+    p_qr_token: qrToken,
+    p_session_id: currentSessionId,
+  });
+
+  if (sessionError) {
+    console.error("START QR MENU SESSION ERROR:", sessionError);
+
+    if (sessionError.message.toLowerCase().includes("expired")) {
+      // Server par bhi expired hai: menu load hone do,
+      // lekin ordering band rakho.
+      setSessionId(currentSessionId);
+      setSessionExpiry(currentSessionExpiry);
+      setSessionExpired(true);
+    } else {
+      setError(`Session error: ${sessionError.message}`);
       setLoading(false);
       return;
     }
   } else {
-    // First visit par hi naya session ID generate karo.
-    currentSessionId = crypto.randomUUID();
-    currentSessionExpiry = Date.now() + 2 * 60 * 60 * 1000;
+    const activeSession = Array.isArray(sessionData)
+      ? sessionData[0]
+      : sessionData;
+
+    if (!activeSession?.session_id || !activeSession?.expires_at) {
+      setError("QR session start nahi ho paya. Dobara scan karein.");
+      setLoading(false);
+      return;
+    }
+
+    const serverExpiry = new Date(
+      activeSession.expires_at
+    ).getTime();
+
+    if (!Number.isFinite(serverExpiry)) {
+      setError("Server se session expiry valid nahi mili.");
+      setLoading(false);
+      return;
+    }
+
+    setSessionId(activeSession.session_id);
+    setSessionExpiry(serverExpiry);
+
+    if (serverExpiry <= Date.now()) {
+      setSessionExpired(true);
+    } else {
+      setSessionExpired(false);
+    }
 
     localStorage.setItem(
       sessionStorageKey,
       JSON.stringify({
-        session_id: currentSessionId,
-        expires_at: currentSessionExpiry,
+        session_id: activeSession.session_id,
+        expires_at: serverExpiry,
       })
     );
   }
-} catch (storageError) {
-  console.error("Customer session load error:", storageError);
-  setError(
-    "Session check nahi ho paya. Browser storage check karein."
-  );
-  setLoading(false);
-  return;
 }
 
-const {
-  data: sessionData,
-  error: sessionError,
-} = await supabase.rpc("start_qr_menu_session", {
-  p_business_id: businessData.id,
-  p_qr_token: qrToken,
-  p_session_id: currentSessionId,
-});
-
-if (sessionError) {
-  // Expired session ko naya session bana kar replace nahi karna.
-  console.error("START QR MENU SESSION ERROR:", sessionError);
-  setError(`Session error: ${sessionError.message}`);
-  setLoading(false);
-  return;
-}
-
-const activeSession = Array.isArray(sessionData)
-  ? sessionData[0]
-  : sessionData;
-
-if (!activeSession?.session_id || !activeSession?.expires_at) {
-  setError("QR session start nahi ho paya. Dobara scan karein.");
-  setLoading(false);
-  return;
-}
-
-const serverExpiry = new Date(
-  activeSession.expires_at
-).getTime();
-
-if (!Number.isFinite(serverExpiry) || serverExpiry <= Date.now()) {
-  setSessionId(activeSession.session_id);
-  setSessionExpiry(serverExpiry);
-  setSessionExpired(true);
-  setLoading(false);
-  return;
-}
-
-setSessionId(activeSession.session_id);
-setSessionExpiry(serverExpiry);
-
-localStorage.setItem(
-  sessionStorageKey,
-  JSON.stringify({
-    session_id: activeSession.session_id,
-    expires_at: serverExpiry,
-  })
-);
 
 
 } // QR CHECK block ends here
@@ -1200,20 +1205,25 @@ if (!business) {
                 </div>
               </div>
 
-              {/* PLACE ORDER */}
+              
+{/* PLACE ORDER */}
 
-              <button
-                onClick={placeOrder}
-                disabled={
-                  placingOrder ||
-                  cart.length === 0
-                }
-                className="mt-4 w-full rounded-xl bg-black p-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {placingOrder
-                  ? "Placing Order..."
-                  : "Place Order"}
-              </button>
+<button
+  onClick={placeOrder}
+  disabled={
+    placingOrder ||
+    cart.length === 0 ||
+    sessionExpired
+  }
+  className="mt-4 w-full rounded-xl bg-black p-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+>
+  {placingOrder
+    ? "Placing Order..."
+    : sessionExpired
+      ? "Session Expired"
+      : "Place Order"}
+</button>
+
 
             </div>
           </div>
