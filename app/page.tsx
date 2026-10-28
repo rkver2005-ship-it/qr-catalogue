@@ -1559,7 +1559,7 @@ function downloadLast30DaysCSV() {
   function getQRUrl(qr: QRCode) {
   if (!business) return "";
 
-  return `https://qr-catalogue-tptv.vercel.app/menu/${business.slug}?qr=${qr.token}`;
+  return `https://qr-catalogue-tptv.vercel.app/scan/${business.slug}?qr=${qr.token}`;
 }
 
   function downloadQR(qr: QRCode) {
