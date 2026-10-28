@@ -137,149 +137,84 @@ export default function MenuPage() {
           console.error("Customer orders load error:", storageError);
         }
 
+        
         // Validate QR code and session
         const params = new URLSearchParams(window.location.search);
         const qrToken = params.get("qr");
+        const requestedSessionId = params.get("sid");
 
-        if (qrToken) {
-          const {
-            data: qrData,
-            error: qrError,
-          } = await supabase
-            .from("qr_codes")
-            .select("id, name, token, enabled")
-            .eq("token", qrToken)
-            .eq("business_id", businessData.id)
-            .eq("enabled", true)
-            .maybeSingle();
-
-          if (qrError) {
-            setError(qrError.message);
-            setLoading(false);
-            return;
-          }
-
-          if (!qrData) {
-            setError("Ye QR code valid nahi hai ya disabled hai.");
-            setLoading(false);
-            return;
-          }
-
-          setQrName(qrData.name);
-
-          const sessionStorageKey =
-            `customer-session-${businessData.id}-${qrToken}`;
-
-          let currentSessionId: string | null = null;
-          let currentSessionExpiry: number | null = null;
-          let shouldCallSessionRpc = true;
-
-          try {
-            const savedSession = localStorage.getItem(sessionStorageKey);
-
-            if (savedSession !== null) {
-              const parsedSession = JSON.parse(savedSession);
-
-              currentSessionId = parsedSession.session_id ?? null;
-              currentSessionExpiry = Number(parsedSession.expires_at);
-
-              if (
-                !currentSessionId ||
-                !Number.isFinite(currentSessionExpiry)
-              ) {
-                setError(
-                  "Session invalid hai. QR code dobara scan karein."
-                );
-                setLoading(false);
-                return;
-              }
-
-              if (currentSessionExpiry <= Date.now()) {
-  currentSessionId = crypto.randomUUID();
-  currentSessionExpiry = null;
-}
-            } else {
-              currentSessionId = crypto.randomUUID();
-            }
-          } catch (storageError) {
-            console.error(
-              "Customer session load error:",
-              storageError
-            );
-            setError(
-              "Session check nahi ho paya. Browser storage check karein."
-            );
-            setLoading(false);
-            return;
-          }
-
-          if (shouldCallSessionRpc) {
-            const {
-              data: sessionData,
-              error: sessionError,
-            } = await supabase.rpc("start_qr_menu_session", {
-              p_business_id: businessData.id,
-              p_qr_token: qrToken,
-              p_session_id: currentSessionId,
-            });
-
-            if (sessionError) {
-              console.error(
-                "START QR MENU SESSION ERROR:",
-                sessionError
-              );
-
-              if (
-                sessionError.message.toLowerCase().includes("expired")
-              ) {
-                setSessionId(currentSessionId);
-                setSessionExpiry(currentSessionExpiry);
-                setSessionExpired(true);
-              } else {
-                setError(`Session error: ${sessionError.message}`);
-                setLoading(false);
-                return;
-              }
-            } else {
-              const activeSession = Array.isArray(sessionData)
-                ? sessionData[0]
-                : sessionData;
-
-              if (
-                !activeSession?.session_id ||
-                !activeSession?.expires_at
-              ) {
-                setError(
-                  "QR session start nahi ho paya. Dobara scan karein."
-                );
-                setLoading(false);
-                return;
-              }
-
-              const serverExpiry = new Date(
-                activeSession.expires_at
-              ).getTime();
-
-              if (!Number.isFinite(serverExpiry)) {
-                setError("Server se session expiry valid nahi mili.");
-                setLoading(false);
-                return;
-              }
-
-              setSessionId(activeSession.session_id);
-              setSessionExpiry(serverExpiry);
-              setSessionExpired(serverExpiry <= Date.now());
-
-              localStorage.setItem(
-                sessionStorageKey,
-                JSON.stringify({
-                  session_id: activeSession.session_id,
-                  expires_at: serverExpiry,
-                })
-              );
-            }
-          }
+        if (!qrToken || !requestedSessionId) {
+          setError("Valid QR scan zaroori hai. QR code dobara scan karein.");
+          setLoading(false);
+          return;
         }
+
+        const { data: qrData, error: qrError } = await supabase
+          .from("qr_codes")
+          .select("id, name, token, enabled")
+          .eq("token", qrToken)
+          .eq("business_id", businessData.id)
+          .eq("enabled", true)
+          .maybeSingle();
+
+        if (qrError || !qrData) {
+          setError(
+            qrError?.message || "Ye QR code valid nahi hai ya disabled hai."
+          );
+          setLoading(false);
+          return;
+        }
+
+        setQrName(qrData.name);
+
+        const { data: sessionData, error: sessionError } =
+          await supabase.rpc("start_qr_menu_session", {
+            p_business_id: businessData.id,
+            p_qr_token: qrToken,
+            p_session_id: requestedSessionId,
+          });
+
+        if (sessionError) {
+          console.error("QR SESSION VALIDATION ERROR:", sessionError);
+          setError(
+            sessionError.message.toLowerCase().includes("expired")
+              ? "Session expire ho gaya. QR code dobara scan karein."
+              : "QR session verify nahi hua. QR code dobara scan karein."
+          );
+          setLoading(false);
+          return;
+        }
+
+        const activeSession = Array.isArray(sessionData)
+          ? sessionData[0]
+          : sessionData;
+
+        if (
+          !activeSession?.session_id ||
+          activeSession.session_id !== requestedSessionId ||
+          !activeSession?.expires_at
+        ) {
+          setError("Session valid nahi hai. QR code dobara scan karein.");
+          setLoading(false);
+          return;
+        }
+
+        const serverExpiry = new Date(activeSession.expires_at).getTime();
+
+        if (!Number.isFinite(serverExpiry) || serverExpiry <= Date.now()) {
+          setSessionId(requestedSessionId);
+          setSessionExpiry(
+            Number.isFinite(serverExpiry) ? serverExpiry : Date.now()
+          );
+          setSessionExpired(true);
+          setLoading(false);
+          return;
+        }
+
+        setSessionId(requestedSessionId);
+        setSessionExpiry(serverExpiry);
+        setSessionExpired(false);
+
 
         // Load categories
         const {
@@ -606,7 +541,16 @@ useEffect(() => {
       </main>
     );
   }
-
+if (sessionExpired) {
+  return (
+    <main className="min-h-screen bg-white p-6 text-black flex items-center justify-center">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold">Session Expired</h1>
+        <p className="mt-3">Dobara QR code scan karein.</p>
+      </div>
+    </main>
+  );
+}
   return (
     <main className="min-h-screen bg-gray-100 pb-28 text-black">
       <div className="mx-auto max-w-xl">
