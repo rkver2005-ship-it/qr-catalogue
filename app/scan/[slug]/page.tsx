@@ -34,24 +34,53 @@ export default function ScanPage() {
         return;
       }
 
-      const sessionId = crypto.randomUUID();
+     const sessionStorageKey = `qr-session-${business.id}-${qrToken}`;
 
-      const { data, error } = await supabase.rpc(
-        "start_qr_menu_session",
-        {
-          p_business_id: business.id,
-          p_qr_token: qrToken,
-          p_session_id: sessionId,
-        }
-      );
+let sessionId = localStorage.getItem(sessionStorageKey);
+console.log("SESSION KEY:", sessionStorageKey);
+console.log("OLD SESSION ID:", sessionId);
 
-      if (error) {
-        console.error("QR session error:", error);
-        if (!cancelled) {
-          setMessage("Session shuru nahi hua. QR dobara scan karein.");
-        }
-        return;
-      }
+if (!sessionId) {
+  sessionId = crypto.randomUUID();
+  localStorage.setItem(sessionStorageKey, sessionId);
+}
+
+let sessionResult = await supabase.rpc("start_qr_menu_session", {
+  p_business_id: business.id,
+  p_qr_token: qrToken,
+  p_session_id: sessionId,
+});
+
+// Agar purana session expire ho gaya, toh naya session banao
+if (
+  sessionResult.error?.message.toLowerCase().includes("expired")
+) {
+  console.log("SESSION EXPIRED ERROR:", sessionResult.error);
+  
+  localStorage.removeItem(sessionStorageKey);
+
+  sessionId = crypto.randomUUID();
+  localStorage.setItem(sessionStorageKey, sessionId);
+
+  sessionResult = await supabase.rpc("start_qr_menu_session", {
+    p_business_id: business.id,
+    p_qr_token: qrToken,
+    p_session_id: sessionId,
+  });
+}
+
+const { data, error } = sessionResult;
+
+if (error) {
+  console.error("QR session error:", error);
+
+  localStorage.removeItem(sessionStorageKey);
+
+  if (!cancelled) {
+    setMessage("Session shuru nahi hua. QR dobara scan karein.");
+  }
+  return;
+}
 
       const session = Array.isArray(data) ? data[0] : data;
 
